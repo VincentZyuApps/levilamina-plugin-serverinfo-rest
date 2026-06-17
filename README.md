@@ -1,4 +1,26 @@
+![levilamina-plugin-serverinfo-rest](https://socialify.git.ci/VincentZyuApps/levilamina-plugin-serverinfo-rest/image?custom_description=%F0%9F%8E%AE%F0%9F%96%A5%EF%B8%8F+%E5%9F%BA%E4%BA%8E+LeviLamina+%E7%9A%84+REST+API+%E6%9C%8D%E5%8A%A1%E5%99%A8%E4%BF%A1%E6%81%AF%E6%9F%A5%E8%AF%A2%E6%8F%92%E4%BB%B6%E3%80%82%E9%80%9A%E8%BF%87+HTTP+%E6%8E%A5%E5%8F%A3%EF%BC%8C%E5%AE%9E%E7%8E%B0%E5%AF%B9+Minecraft+%E5%9F%BA%E5%B2%A9%E7%89%88%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%8A%B6%E6%80%81%E3%80%81%E7%8E%A9%E5%AE%B6%E4%BF%A1%E6%81%AF%E7%9A%84%E5%AE%9E%E6%97%B6%E6%9F%A5%E8%AF%A2%E3%80%82%F0%9F%94%8D%F0%9F%A4%96&description=1&font=JetBrains+Mono&forks=1&issues=1&language=1&logo=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F78095377%3Fs%3D200%26v%3D4&name=1&owner=1&pulls=1&stargazers=1&theme=Auto&v=4)
+
 # serverinfo-rest
+
+🌐 基于基岩版 Minecraft LeviLamina 服务端的 REST API 服务端插件：提供 HTTP 接口查询服务器状态与玩家信息。
+🌐 A REST API plugin for LeviLamina Server(Minecraft Bedrock Edition) that provides HTTP interfaces to query server status and player information.
+
+[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest)
+[![Gitee](https://img.shields.io/badge/Gitee-C71D23?style=for-the-badge&logo=gitee&logoColor=white)](https://gitee.com/vincent-zyu/levilamina-plugin-serverinfo-rest)
+
+[![LeviLamina](https://img.shields.io/badge/for-LeviLamina-7FA973?style=for-the-badge&logo=cplusplus&logoColor=white&labelColor=2C5E3B)](https://github.com/LiteLDev/LeviLamina)
+
+[![GitHub last commit](https://img.shields.io/github/last-commit/VincentZyuApps/levilamina-plugin-serverinfo-rest?style=for-the-badge&logo=github&color=blue&label=github%20last%20commit)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest/commits/main)
+
+[![xmake](https://img.shields.io/badge/xmake-v2.9.7-0094D9?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTE4LjkgNS4xTDEyIDEybDYuOSA2LjktMS40IDEuNEwxMiAxMy40bC02LjkgNi45LTEuNC0xLjRMMTAuNiAxMiAzLjcgNS4xbDEuNC0xLjRMMTIgMTAuNmw2LjktNi45IDEuNCAxLjR6IiBmaWxsPSIjZmZmIi8+PC9zdmc+)](https://xmake.io)
+[![C++20](https://img.shields.io/badge/C++-20-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/20)
+[![MSVC](https://img.shields.io/badge/MSVC-2022-0078D4?style=for-the-badge&logo=cplusplus&logoColor=white)](https://learn.microsoft.com/en-us/cpp/)
+[![GitHub last commit](https://img.shields.io/github/last-commit/VincentZyuApps/levilamina-plugin-serverinfo-rest?style=for-the-badge&logo=github&color=blue&label=github%20last%20commit)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest/commits/main)
+[![GitHub CI](https://img.shields.io/github/actions/workflow/status/VincentZyuApps/levilamina-plugin-serverinfo-rest/build.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=github%20action%20ci%20build)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest/actions)
+
+[![RELEASE](https://img.shields.io/static/v1?label=RELEASE&message=WINDOWS-x64&color=0078D4&style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6TTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgweiBNMTIuNjIzIDEyLjYyM0gyNFYyNEgxMi42MjN6IiBmaWxsPSIjZmZmIi8+PC9zdmc+)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest/releases)
+
+[![QQ群](https://img.shields.io/badge/QQ群-1085190201-12B7F5?style=flat-square&logo=qq&logoColor=white)](https://qm.qq.com/q/4vjto4V7Di)
 
 ```shell
                                    _       ____                           __
@@ -10,21 +32,39 @@
 
 一个 LeviLamina 插件，提供 REST API 来查询 Minecraft Bedrock 服务器信息。
 
-## 功能
+---
+
+## 📋 功能
 
 - 查询服务器状态
 - 获取在线玩家列表
 - 获取在线玩家数量
-- 查询指定玩家详细信息（位置、血量、IP 等）
+- 查询指定玩家详细信息（位置、IP、语言等）
 - 支持 CORS 跨域请求
+- 可选 Token 认证
 
-## 安装
+---
+
+## 📦 安装
 
 1. 确保已安装 LeviLamina
 2. 将 `serverinfo-rest` 文件夹放入 `plugins/` 目录
-3. 启动服务器
+3. 重启服务器，配置文件会自动生成
 
-## 配置
+```
+BDS服务端/
+├── bedrock_server_mod.exe
+├── plugins/
+│   └── serverinfo-rest/
+│       ├── manifest.json
+│       ├── serverinfo-rest.dll
+│       └── serverinfo-rest.pdb
+└── ...
+```
+
+---
+
+## ⚙️ 配置
 
 配置文件位于 `plugins/serverinfo-rest/config/config.json`：
 
@@ -70,10 +110,14 @@ curl "http://localhost:60202/api/v1/player?name=Steve&token=your-secret-token"
 ```
 
 **错误响应**：
-- 缺少 token: `401 Unauthorized` - `{"error": "Missing token parameter"}`
-- token 错误: `403 Forbidden` - `{"error": "Invalid token"}`
+- `401 Unauthorized` — 缺少 token：`{"error": "Missing token parameter"}`
+- `403 Forbidden` — token 错误：`{"error": "Invalid token"}`
 
-## API 端点
+---
+
+## 📡 API 端点
+
+所有 API 响应均为 JSON 格式。
 
 ### 根路径
 
@@ -83,13 +127,31 @@ GET /
 
 返回 API 概览信息。
 
+```json
+{
+    "name": "serverinfo-rest",
+    "version": "0.1.0",
+    "description": "REST API for Minecraft Bedrock Server information",
+    "endpoints": {
+        "GET /api/v1/status": "Server status overview",
+        "GET /api/v1/health": "Health check",
+        "GET /api/v1/server": "Server information",
+        "GET /api/v1/players": "List all online players",
+        "GET /api/v1/players/count": "Get online player count",
+        "GET /api/v1/players/names": "Get list of player names",
+        "GET /api/v1/player?name=<name>": "Get specific player information"
+    }
+}
+```
+
 ### 健康检查
 
 ```
 GET /api/v1/health
 ```
 
-返回：
+此端点**不需要 Token 认证**，适用于监控。
+
 ```json
 {
     "status": "healthy"
@@ -102,12 +164,11 @@ GET /api/v1/health
 GET /api/v1/status
 ```
 
-返回：
 ```json
 {
     "status": "online",
     "plugin": "serverinfo-rest",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "playerCount": 5
 }
 ```
@@ -118,7 +179,13 @@ GET /api/v1/status
 GET /api/v1/server
 ```
 
-返回服务器详细信息。
+```json
+{
+    "levelName": "Unknown",
+    "playerCount": 5,
+    "status": "running"
+}
+```
 
 ### 玩家列表
 
@@ -126,10 +193,8 @@ GET /api/v1/server
 GET /api/v1/players
 ```
 
-返回：
 ```json
 {
-    "count": 2,
     "players": [
         {
             "name": "Player1",
@@ -141,7 +206,8 @@ GET /api/v1/players
             "xuid": "987654321",
             "uuid": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
         }
-    ]
+    ],
+    "count": 2
 }
 ```
 
@@ -151,7 +217,6 @@ GET /api/v1/players
 GET /api/v1/players/count
 ```
 
-返回：
 ```json
 {
     "count": 5
@@ -164,11 +229,10 @@ GET /api/v1/players/count
 GET /api/v1/players/names
 ```
 
-返回：
 ```json
 {
-    "count": 2,
-    "names": ["Player1", "Player2"]
+    "names": ["Player1", "Player2"],
+    "count": 2
 }
 ```
 
@@ -178,14 +242,11 @@ GET /api/v1/players/names
 GET /api/v1/player?name=PlayerName
 ```
 
-返回：
 ```json
 {
     "name": "PlayerName",
     "xuid": "123456789",
     "uuid": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "health": 20,
-    "maxHealth": 20,
     "ipAndPort": "192.168.1.100:19132",
     "locale": "zh_CN",
     "isOperator": false,
@@ -197,22 +258,45 @@ GET /api/v1/player?name=PlayerName
 }
 ```
 
-## 示例
+**错误响应**：
+- `400 Bad Request` — 缺少 name 参数：`{"error": "Missing 'name' parameter"}`
+- `404 Not Found` — 玩家未找到：`{"error": "Player not found"}`
 
-### 使用 curl 测试
+---
+
+## 🧪 测试
+
+### 🐍 使用Python脚本
+
+项目中包含 Python 测试脚本 `test/test_api.py`，可对 API 进行测试：
+```bash
+# 基本用法
+python test/test_api.py --host localhost --port 60202
+# 指定玩家名
+python test/test_api.py --host localhost --port 60202 --player Steve
+# 传入token
+python test/test_api.py --host localhost --port 60202 --token your-secret-token
+# 远程服务器
+python test/test_api.py --host 91.whzz.online --port 60202
+```
+测试脚本会自动依次请求所有端点并汇总测试结果。
+
+### ⚡ 使用 cURL
 
 ```bash
 # 获取服务器状态
 curl http://localhost:60202/api/v1/status
-
 # 获取玩家列表
 curl http://localhost:60202/api/v1/players
-
+# 获取玩家名列表
+curl http://localhost:60202/api/v1/players/names
 # 获取指定玩家信息
 curl "http://localhost:60202/api/v1/player?name=Steve"
+# 健康检查
+curl http://localhost:60202/api/v1/health
 ```
 
-### 在 JavaScript 中使用
+### 🌐 使用 JavaScript
 
 ```javascript
 // 获取玩家列表
@@ -221,6 +305,71 @@ fetch('http://your-server:60202/api/v1/players')
     .then(data => console.log(data.players));
 ```
 
-## 许可证
+---
 
-MIT License
+## 🏗️ 技术栈
+
+| 组件 | 类别 | 说明 |
+|:---|:---|:---|
+| [![LeviLamina](https://img.shields.io/badge/LeviLamina-1.0.x-7FA973?style=flat-square&logo=cplusplus&logoColor=white)](https://github.com/LiteLDev/LeviLamina) | 插件框架 | BDS 模组加载器，提供事件系统、配置加载等 |
+| [![nlohmann/json](https://img.shields.io/badge/nlohmann/json-3.11-585858?style=flat-square&logo=json&logoColor=white)](https://github.com/nlohmann/json) | 第三方库 | JSON 序列化/反序列化（LeviLamina 内置） |
+| [![WinSock2](https://img.shields.io/badge/WinSock2-Ws2__32-0078D4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6TTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgweiBNMTIuNjIzIDEyLjYyM0gyNFYyNEgxMi42MjN6IiBmaWxsPSIjZmZmIi8+PC9zdmc+&logoColor=white)](https://learn.microsoft.com/en-us/windows/win32/winsock/) | 系统 API | Windows TCP Socket，HTTP 传输层 |
+| [![xmake](https://img.shields.io/badge/build-xmake-0094D9?style=flat-square&logo=lua&logoColor=white)](https://xmake.io) | 构建工具 | 跨平台构建系统 |
+
+---
+
+## 🔄 CI/CD — GitHub Actions 自动构建与发布
+
+[![GitHub last commit](https://img.shields.io/github/last-commit/VincentZyuApps/levilamina-plugin-serverinfo-rest?style=for-the-badge&logo=github&color=blue&label=github%20last%20commit)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest/commits/main)
+[![GitHub CI](https://img.shields.io/github/actions/workflow/status/VincentZyuApps/levilamina-plugin-serverinfo-rest/build.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=github%20action%20ci%20build)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest/actions)
+
+本项目使用 GitHub Actions 实现自动编译与发布。推送到 `main`/`master` 分支时，根据 commit 信息关键词触发：
+
+| commit 信息含有关键词 | 自动构建 | 自动发版 |
+|-----------------------|:--------:|:--------:|
+| `build action`        | ✅       | ❌       |
+| `build release`       | ✅       | ✅       |
+
+```bash
+# 仅构建测试
+git commit -m "build action. fix: correct typo in config"
+
+# 构建 + 发布 GitHub Release
+git commit -m "build release. feat: add new API endpoint"
+```
+
+> 📖 详细 CI 流程说明见 [`.github/workflows/build.md`](.github/workflows/build.md)
+
+---
+
+## 🔧 版本号管理
+
+版本号**唯一数据源**为 [`tooth.json`](tooth.json)。发版流程：
+
+1. 修改 `tooth.json` 中的版本号
+2. 运行脚本同步更新所有文件中的版本号：
+
+```bash
+python scripts/bump_version.py 1.0.1
+```
+
+脚本会自动更新以下 5 处：
+- `tooth.json` — 版本号唯一数据源
+- `README.md` — 根端点与 status 端点中的版本示例
+- `src/mod/ServerInfoRestMod.cpp` — `/status` 与 `/` 路由中的版本响应
+
+3. 提交并推送触发自动发布：
+
+```bash
+git add -A
+git commit -m "build release. bump: 0.1.0 → 0.1.1"
+git push
+```
+
+---
+
+## 🔗 相关链接
+
+- [LeviLamina](https://github.com/LiteLDev/LeviLamina) — 基岩版模组加载器
+- [mclistener-ws-server](https://github.com/VincentZyuApps/levilamina-plugin-mclistener-ws-server) — 群服互通 WebSocket 插件（同一作者）
+

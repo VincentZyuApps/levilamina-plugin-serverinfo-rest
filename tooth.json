@@ -1,29 +1,51 @@
 {
     "format_version": 3,
-    "tooth": "github.com/VincentZyu233/levilamina-plugin-serverinfo-rest",
-    "version": "1.0.0",
+    "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+    "tooth": "github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest",
+    "version": "0.1.0",
     "info": {
         "name": "serverinfo-rest",
-        "description": "A LeviLamina plugin that provides REST API for server information",
-        "author": "VincentZyu",
+        "description": "🌐🖥️🔍 A REST API plugin for LeviLamina to query Minecraft Bedrock Server status and player info. Provides HTTP endpoints for real-time server monitoring. 🌐🖥️🔍 基于 LeviLamina 的 REST API 服务器信息查询插件。通过 HTTP 接口，实现对 Minecraft 基岩版服务器状态、玩家信息的实时查询。🔍🤖",
         "tags": [
-            "levilamina",
-            "ll",
-            "plugin",
-            "rest",
-            "api",
-            "server-info"
-        ]
+            "platform:levilamina",
+            "type:mod"
+        ],
+        "avatar_url": ""
     },
-    "dependencies": {
-        "github.com/LiteLDev/LeviLamina": ">=1.0.0"
-    },
-    "files": {
-        "place": [
-            {
-                "src": "serverinfo-rest/*",
-                "dest": "plugins/serverinfo-rest/"
+    "variants": [
+        {
+            "label": "",
+            "platform": "win-x64",
+            "dependencies": {
+                "github.com/LiteLDev/LeviLamina": "1.0.*"
+            },
+            "assets": [
+                {
+                    "type": "zip",
+                    "urls": [
+                        "https://{{tooth}}/releases/download/v{{version}}/serverinfo-rest-server-windows-x64.zip"
+                    ],
+                    "placements": [
+                        {
+                            "type": "dir",
+                            "src": "serverinfo-rest/",
+                            "dest": "plugins/serverinfo-rest/"
+                        }
+                    ]
+                }
+            ],
+            "preserve_files": [],
+            "remove_files": [],
+            "scripts": {
+                "pre_install": [],
+                "install": [],
+                "post_install": [],
+                "pre_pack": [],
+                "post_pack": [],
+                "pre_uninstall": [],
+                "uninstall": [],
+                "post_uninstall": []
             }
-        ]
-    }
+        }
+    ]
 }

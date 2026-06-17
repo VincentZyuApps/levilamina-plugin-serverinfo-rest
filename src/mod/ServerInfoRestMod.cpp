@@ -252,7 +252,7 @@ bool ServerInfoRestMod::enable() {
         nlohmann::json json;
         json["status"] = "online";
         json["plugin"] = "serverinfo-rest";
-        json["version"] = "1.0.0";
+        json["version"] = "0.1.0";
         json["playerCount"] = getPlayerCount();
         
         getSelf().getLogger().debug("[API] /status response: playerCount={}", json["playerCount"].get<int>());
@@ -393,7 +393,7 @@ bool ServerInfoRestMod::enable() {
         getSelf().getLogger().trace("[API] / (root) endpoint called");
         nlohmann::json json;
         json["name"] = "serverinfo-rest";
-        json["version"] = "1.0.0";
+        json["version"] = "0.1.0";
         json["description"] = "REST API for Minecraft Bedrock Server information";
         json["endpoints"] = {
             {"GET " + prefix + "/status", "Server status overview"},
