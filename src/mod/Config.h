@@ -22,7 +22,7 @@ struct Config {
     
     // Token 认证配置
     bool enableToken = false;  // 是否启用 token 验证
-    std::string token = "";    // 访问令牌，启用后需要在请求中附带 ?token=xxx
+    std::string token = "";    // 推荐使用 Authorization: Bearer <token>，query token 仅用于兼容
 };
 
 } // namespace serverinfo_rest

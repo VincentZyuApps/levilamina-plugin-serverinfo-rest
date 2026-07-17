@@ -136,23 +136,28 @@ def main():
     status, data = request_api(build_url(f"{api_base}/status"), args.timeout)
     results.append(("服务器状态", print_response(status, data)))
     
-    # 测试 4: 服务器信息
-    print_section("🖥️ ", "[4/7] 服务器信息")
+    # 测试 4: 查在线聚合快照
+    print_section("📈", "[4/8] 查在线聚合快照")
+    status, data = request_api(build_url(f"{api_base}/overview"), args.timeout)
+    results.append(("查在线聚合快照", print_response(status, data)))
+
+    # 测试 5: 服务器信息
+    print_section("🖥️ ", "[5/8] 服务器信息")
     status, data = request_api(build_url(f"{api_base}/server"), args.timeout)
     results.append(("服务器信息", print_response(status, data)))
     
     # 测试 5: 玩家列表
-    print_section("👥", "[5/7] 玩家列表")
+    print_section("👥", "[6/8] 玩家列表")
     status, data = request_api(build_url(f"{api_base}/players"), args.timeout)
     results.append(("玩家列表", print_response(status, data)))
     
     # 测试 6: 玩家数量
-    print_section("🔢", "[6/7] 玩家数量")
+    print_section("🔢", "[7/8] 玩家数量")
     status, data = request_api(build_url(f"{api_base}/players/count"), args.timeout)
     results.append(("玩家数量", print_response(status, data)))
     
     # 测试 7: 玩家名列表
-    print_section("📝", "[7/7] 玩家名列表")
+    print_section("📝", "[8/8] 玩家名列表")
     status, data = request_api(build_url(f"{api_base}/players/names"), args.timeout)
     results.append(("玩家名列表", print_response(status, data)))
     

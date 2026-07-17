@@ -4,20 +4,92 @@
 #include "ll/api/mod/RegisterHelper.h"
 #include "ll/api/Config.h"
 #include "ll/api/service/Bedrock.h"
+#include "ll/api/service/TargetedBedrock.h"
+#include "ll/api/Versions.h"
 #include "ll/api/io/LogLevel.h"
 #include "ll/api/event/EventBus.h"
 #include "ll/api/event/player/PlayerJoinEvent.h"
 #include "ll/api/event/player/PlayerDisconnectEvent.h"
+#include "ll/api/event/world/ServerLevelTickEvent.h"
 
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/level/Level.h"
 #include "mc/server/ServerLevel.h"
+#include "mc/server/PropertiesSettings.h"
 
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <sstream>
 
 namespace serverinfo_rest {
+
+namespace {
+constexpr auto PluginVersion = "0.1.0";
+
+int hexValue(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+std::string urlDecode(std::string_view value) {
+    std::string result;
+    result.reserve(value.size());
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '+') {
+            result.push_back(' ');
+        } else if (value[i] == '%' && i + 2 < value.size()) {
+            auto high = hexValue(value[i + 1]);
+            auto low = hexValue(value[i + 2]);
+            if (high >= 0 && low >= 0) {
+                result.push_back(static_cast<char>((high << 4) | low));
+                i += 2;
+            } else {
+                result.push_back(value[i]);
+            }
+        } else {
+            result.push_back(value[i]);
+        }
+    }
+    return result;
+}
+
+std::string getQueryParam(const std::string& query, const std::string& wantedKey) {
+    std::istringstream stream(query);
+    std::string param;
+    while (std::getline(stream, param, '&')) {
+        auto pos = param.find('=');
+        if (pos == std::string::npos) continue;
+        if (urlDecode(std::string_view(param).substr(0, pos)) == wantedKey) {
+            return urlDecode(std::string_view(param).substr(pos + 1));
+        }
+    }
+    return {};
+}
+
+std::string getHeaderCaseInsensitive(const HttpRequest& request, std::string wantedKey) {
+    std::transform(wantedKey.begin(), wantedKey.end(), wantedKey.begin(), [](unsigned char ch) { return std::tolower(ch); });
+    for (const auto& [key, value] : request.headers) {
+        auto normalized = key;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char ch) { return std::tolower(ch); });
+        if (normalized == wantedKey) return value;
+    }
+    return {};
+}
+
+double roundTps(double value) {
+    return std::round(value * 100.0) / 100.0;
+}
+
+long long unixTimeMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+}
+} // namespace
 
 // 将字符串转换为日志级别
 static ll::io::LogLevel parseLogLevel(const std::string& levelStr) {
@@ -72,6 +144,56 @@ int ServerInfoRestMod::getPlayerCount() const {
     int count = static_cast<int>(mPlayerCache.size());
     getSelf().getLogger().trace("getPlayerCount() = {}", count);
     return count;
+}
+
+TpsSnapshot ServerInfoRestMod::getTpsSnapshot() const {
+    std::lock_guard<std::mutex> lock(mTpsMutex);
+    TpsSnapshot snapshot;
+    snapshot.sampledSeconds = static_cast<int>(mTpsSamples.size());
+    if (mTpsSamples.empty()) return snapshot;
+
+    auto average = [this](size_t window) {
+        auto count = std::min(window, mTpsSamples.size());
+        double sum = 0.0;
+        for (auto it = mTpsSamples.end() - static_cast<std::ptrdiff_t>(count); it != mTpsSamples.end(); ++it) {
+            sum += *it;
+        }
+        return count == 0 ? 0.0 : sum / static_cast<double>(count);
+    };
+
+    snapshot.realtime = roundTps(mTpsSamples.back());
+    snapshot.avg10s = roundTps(average(10));
+    snapshot.avg60s = roundTps(average(60));
+    snapshot.avg300s = roundTps(average(300));
+    return snapshot;
+}
+
+int ServerInfoRestMod::getMaxPlayers() const {
+    auto properties = ll::service::getPropertiesSettings();
+    return properties ? static_cast<int>(properties->mMaxPlayers) : 0;
+}
+
+long long ServerInfoRestMod::getUptimeMs() const {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - mStartedAt
+    ).count();
+}
+
+void ServerInfoRestMod::onServerTick() {
+    auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(mTpsMutex);
+    ++mTicksInCurrentBucket;
+    auto elapsed = std::chrono::duration<double>(now - mTpsBucketStartedAt).count();
+    if (elapsed < 1.0) return;
+
+    auto tps = std::clamp(static_cast<double>(mTicksInCurrentBucket) / elapsed, 0.0, 20.0);
+    auto elapsedSeconds = std::max(1, static_cast<int>(std::floor(elapsed)));
+    for (int i = 0; i < elapsedSeconds; ++i) {
+        mTpsSamples.push_back(tps);
+    }
+    while (mTpsSamples.size() > 300) mTpsSamples.pop_front();
+    mTicksInCurrentBucket = 0;
+    mTpsBucketStartedAt = now;
 }
 
 void ServerInfoRestMod::onPlayerJoin(const std::string& xuid, const CachedPlayerInfo& info) {
@@ -156,6 +278,18 @@ bool ServerInfoRestMod::enable() {
     // ==================== 注册玩家事件监听器 ====================
     auto& eventBus = ll::event::EventBus::getInstance();
 
+    mStartedAt = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> lock(mTpsMutex);
+        mTpsSamples.clear();
+        mTicksInCurrentBucket = 0;
+        mTpsBucketStartedAt = mStartedAt;
+    }
+    mServerTickListener = eventBus.emplaceListener<ll::event::ServerLevelTickEvent>(
+        [this](ll::event::ServerLevelTickEvent&) { onServerTick(); }
+    );
+    logger.info("ServerLevelTickEvent listener registered successfully");
+
     // 玩家加入事件
     logger.debug("Registering PlayerJoinEvent listener...");
     mPlayerJoinListener = eventBus.emplaceListener<ll::event::player::PlayerJoinEvent>(
@@ -208,22 +342,15 @@ bool ServerInfoRestMod::enable() {
             return true; // 未启用 token 验证，直接通过
         }
         
-        // 从 query string 中提取 token
         std::string reqToken;
-        std::istringstream queryStream(req.query);
-        std::string param;
-        
-        while (std::getline(queryStream, param, '&')) {
-            size_t eqPos = param.find('=');
-            if (eqPos != std::string::npos) {
-                std::string key = param.substr(0, eqPos);
-                std::string value = param.substr(eqPos + 1);
-                if (key == "token") {
-                    reqToken = value;
-                    break;
-                }
-            }
+        auto authorization = getHeaderCaseInsensitive(req, "authorization");
+        constexpr std::string_view bearerPrefix = "Bearer ";
+        if (authorization.size() >= bearerPrefix.size()
+            && std::equal(bearerPrefix.begin(), bearerPrefix.end(), authorization.begin(),
+                [](char left, char right) { return std::tolower(static_cast<unsigned char>(left)) == std::tolower(static_cast<unsigned char>(right)); })) {
+            reqToken = authorization.substr(bearerPrefix.size());
         }
+        if (reqToken.empty()) reqToken = getQueryParam(req.query, "token");
         
         if (reqToken.empty()) {
             res.setStatus(401, "Unauthorized");
@@ -252,8 +379,10 @@ bool ServerInfoRestMod::enable() {
         nlohmann::json json;
         json["status"] = "online";
         json["plugin"] = "serverinfo-rest";
-        json["version"] = "0.1.0";
+        json["version"] = PluginVersion;
         json["playerCount"] = getPlayerCount();
+        json["bdsVersion"] = ll::getGameVersion().to_string();
+        json["protocolVersion"] = ll::getNetworkProtocolVersion();
         
         getSelf().getLogger().debug("[API] /status response: playerCount={}", json["playerCount"].get<int>());
         res.setJson(json.dump());
@@ -319,22 +448,7 @@ bool ServerInfoRestMod::enable() {
     mHttpServer->get(prefix + "/player", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         if (!validateToken(req, res)) return;
         
-        // 解析 query string 获取 name
-        std::string playerName;
-        std::istringstream queryStream(req.query);
-        std::string param;
-        
-        while (std::getline(queryStream, param, '&')) {
-            size_t eqPos = param.find('=');
-            if (eqPos != std::string::npos) {
-                std::string key = param.substr(0, eqPos);
-                std::string value = param.substr(eqPos + 1);
-                if (key == "name") {
-                    playerName = value;
-                    break;
-                }
-            }
-        }
+        auto playerName = getQueryParam(req.query, "name");
         
         if (playerName.empty()) {
             getSelf().getLogger().debug("[API] /player request missing 'name' parameter");
@@ -374,29 +488,78 @@ bool ServerInfoRestMod::enable() {
         if (!validateToken(req, res)) return;
         
         nlohmann::json json;
-        json["levelName"] = "Unknown"; // Level 名称需要其他方式获取
-        json["playerCount"] = getPlayerCount();
+        auto properties = ll::service::getPropertiesSettings();
+        json["levelName"] = properties ? static_cast<std::string>(properties->mLevelName) : "Unknown";
+        json["bdsVersion"] = ll::getGameVersion().to_string();
+        json["protocolVersion"] = ll::getNetworkProtocolVersion();
+        json["levilaminaVersion"] = ll::getLoaderVersion().to_string();
+        json["pluginVersion"] = PluginVersion;
+        json["onlinePlayers"] = getPlayerCount();
+        json["maxPlayers"] = getMaxPlayers();
         json["status"] = "running";
         
-        getSelf().getLogger().debug("[API] /server response: playerCount={}", json["playerCount"].get<int>());
+        getSelf().getLogger().debug("[API] /server response: onlinePlayers={}", json["onlinePlayers"].get<int>());
+        res.setJson(json.dump());
+    });
+
+    // GET /api/v1/overview - 一次返回查在线所需的同一时刻快照
+    mHttpServer->get(prefix + "/overview", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
+        if (!validateToken(req, res)) return;
+
+        auto players = getPlayerCache();
+        std::sort(players.begin(), players.end(), [](const auto& left, const auto& right) {
+            return left.name < right.name;
+        });
+        auto tps = getTpsSnapshot();
+
+        nlohmann::json names = nlohmann::json::array();
+        for (const auto& player : players) names.push_back(player.name);
+
+        nlohmann::json json;
+        json["status"] = "online";
+        json["timestamp"] = unixTimeMs();
+        json["uptimeMs"] = getUptimeMs();
+        json["tps"] = {
+            {"realtime", tps.realtime},
+            {"avg10s", tps.avg10s},
+            {"avg60s", tps.avg60s},
+            {"avg300s", tps.avg300s},
+            {"sampledSeconds", tps.sampledSeconds}
+        };
+        json["players"] = {
+            {"online", players.size()},
+            {"max", getMaxPlayers()},
+            {"names", std::move(names)}
+        };
+        json["versions"] = {
+            {"bds", ll::getGameVersion().to_string()},
+            {"protocol", ll::getNetworkProtocolVersion()},
+            {"levilamina", ll::getLoaderVersion().to_string()},
+            {"plugin", PluginVersion}
+        };
         res.setJson(json.dump());
     });
 
     // GET /api/v1/health - 健康检查端点 (不需要 token，用于监控)
     mHttpServer->get(prefix + "/health", [this](const HttpRequest&, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /health endpoint called");
-        res.setJson("{\"status\": \"healthy\"}");
+        nlohmann::json json;
+        json["status"] = "healthy";
+        json["timestamp"] = unixTimeMs();
+        json["uptime"] = getUptimeMs();
+        res.setJson(json.dump());
     });
 
     // GET / - 根路径，返回 API 信息
-    mHttpServer->get("/", [this, &prefix](const HttpRequest&, HttpResponse& res) {
+    mHttpServer->get("/", [this, prefix](const HttpRequest&, HttpResponse& res) {
         getSelf().getLogger().trace("[API] / (root) endpoint called");
         nlohmann::json json;
         json["name"] = "serverinfo-rest";
-        json["version"] = "0.1.0";
+        json["version"] = PluginVersion;
         json["description"] = "REST API for Minecraft Bedrock Server information";
         json["endpoints"] = {
             {"GET " + prefix + "/status", "Server status overview"},
+            {"GET " + prefix + "/overview", "Combined online status snapshot"},
             {"GET " + prefix + "/health", "Health check"},
             {"GET " + prefix + "/server", "Server information"},
             {"GET " + prefix + "/players", "List all online players"},
@@ -428,6 +591,11 @@ bool ServerInfoRestMod::disable() {
         eventBus.removeListener(mPlayerLeaveListener);
         mPlayerLeaveListener = nullptr;
         logger.debug("PlayerDisconnectEvent listener removed");
+    }
+    if (mServerTickListener) {
+        eventBus.removeListener(mServerTickListener);
+        mServerTickListener = nullptr;
+        logger.debug("ServerLevelTickEvent listener removed");
     }
     
     // 清空玩家缓存

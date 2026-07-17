@@ -4,6 +4,23 @@
 #include <sstream>
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+
+namespace {
+std::string redactQuery(const std::string& query) {
+    std::istringstream input(query);
+    std::string result;
+    std::string item;
+    while (std::getline(input, item, '&')) {
+        if (!result.empty()) result += '&';
+        auto pos = item.find('=');
+        auto key = item.substr(0, pos);
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) { return std::tolower(ch); });
+        result += key == "token" ? "token=***" : item;
+    }
+    return result;
+}
+} // namespace
 
 namespace serverinfo_rest {
 
@@ -179,7 +196,7 @@ void HttpServer::handleClient(SOCKET clientSocket) {
         return;
     }
     
-    logger.trace("[HTTP] Raw request (first 300 chars):\n{}", rawRequest.substr(0, 300));
+    logger.trace("[HTTP] Raw request received ({} bytes)", rawRequest.size());
     
     // 解析请求
     HttpRequest request = parseRequest(rawRequest);
@@ -189,7 +206,7 @@ void HttpServer::handleClient(SOCKET clientSocket) {
     if (mMod->getConfig().enableCors) {
         response.headers["Access-Control-Allow-Origin"] = "*";
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type";
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
     }
     
     // 处理 OPTIONS 预检请求
@@ -303,8 +320,8 @@ std::string HttpServer::buildResponse(const HttpResponse& response) {
 void HttpServer::handleRequest(const HttpRequest& request, HttpResponse& response) {
     auto& logger = mMod->getSelf().getLogger();
     
-    logger.debug("[HTTP] {} {} (query: {})", request.method, request.path, 
-                 request.query.empty() ? "<none>" : request.query);
+    logger.debug("[HTTP] {} {} (query: {})", request.method, request.path,
+                 request.query.empty() ? "<none>" : redactQuery(request.query));
     logger.trace("[HTTP] Request headers count: {}", request.headers.size());
     
     RouteHandler handler = nullptr;
