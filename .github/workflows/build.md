@@ -130,7 +130,7 @@ dispatch   └─ 无输入版本 ──→ 使用 tooth.json 的版本
 | [![xmake](https://img.shields.io/badge/xmake-2.9.x-0094D9?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTE4LjkgNS4xTDEyIDEybDYuOSA2LjktMS40IDEuNEwxMiAxMy40bC02LjkgNi45LTEuNC0xLjRMMTAuNiAxMiAzLjcgNS4xbDEuNC0xLjRMMTIgMTAuNmw2LjktNi45IDEuNCAxLjR6IiBmaWxsPSIjZmZmIi8+PC9zdmc+)](https://xmake.io) | 2.9.x | 构建系统 |
 | [![MSVC](https://img.shields.io/badge/MSVC-2022-0078D4?style=flat-square&logo=cplusplus&logoColor=white)](https://learn.microsoft.com/en-us/cpp/) | 2022 | C++ 编译器 |
 | [![C++20](https://img.shields.io/badge/C++20-20-00599C?style=flat-square&logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/20) | C++20 | 语言标准 |
-| [![LeviLamina](https://img.shields.io/badge/LeviLamina-1.0.x-7FA973?style=flat-square&logo=cplusplus&logoColor=white&labelColor=2C5E3B)](https://github.com/LiteLDev/LeviLamina) | 1.0.x | 模组加载器 SDK |
+| [![LeviLamina](https://img.shields.io/badge/LeviLamina-26.10.x-7FA973?style=flat-square&logo=cplusplus&logoColor=white&labelColor=2C5E3B)](https://github.com/LiteLDev/LeviLamina) | 26.10.x | 模组加载器 SDK |
 | [![LeviBuildScript](https://img.shields.io/badge/LeviBuildScript-v0.x-585858?style=flat-square)](https://github.com/LiteLDev/LeviBuildScript) | — | 构建脚本插件 |
 | [![nlohmann/json](https://img.shields.io/badge/nlohmann%2Fjson-v3.x-585858?style=flat-square&logo=json&logoColor=white)](https://github.com/nlohmann/json) | — | JSON 序列化 |
 | [![WinSock2](https://img.shields.io/badge/WinSock2-Ws2_32-585858?style=flat-square)](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/) | — | 网络 API (Ws2_32) |
