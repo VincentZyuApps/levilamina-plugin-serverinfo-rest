@@ -5,8 +5,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <optional>
+#include <string_view>
 
 namespace {
+constexpr std::size_t MaxHeaderBytes = 16 * 1024;
+constexpr std::size_t MaxBodyBytes = 64 * 1024;
+
 std::string redactQuery(const std::string& query) {
     std::istringstream input(query);
     std::string result;
@@ -19,6 +24,32 @@ std::string redactQuery(const std::string& query) {
         result += key == "token" ? "token=***" : item;
     }
     return result;
+}
+
+std::optional<std::size_t> contentLengthFromHeader(std::string_view header) {
+    std::istringstream stream{std::string(header)};
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        auto colon = line.find(':');
+        if (colon == std::string::npos) continue;
+        auto key = line.substr(0, colon);
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+        if (key != "content-length") continue;
+        auto value = line.substr(colon + 1);
+        value.erase(0, value.find_first_not_of(" \t"));
+        if (value.empty() || !std::all_of(value.begin(), value.end(), [](unsigned char ch) { return std::isdigit(ch); })) {
+            return std::nullopt;
+        }
+        try {
+            return static_cast<std::size_t>(std::stoull(value));
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+    return 0;
 }
 } // namespace
 
@@ -179,15 +210,41 @@ void HttpServer::handleClient(SOCKET clientSocket) {
     setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
     logger.trace("[HTTP] Client socket timeout set to {}ms", timeout);
     
-    // 读取请求
+    // 读取完整请求头和 Content-Length 指定的正文
     char buffer[8192];
     std::string rawRequest;
-    
-    int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-    logger.trace("[HTTP] Received {} bytes from client", bytesReceived);
-    if (bytesReceived > 0) {
-        buffer[bytesReceived] = '\0';
-        rawRequest = buffer;
+    std::optional<std::size_t> expectedSize;
+    bool requestTooLarge = false;
+
+    while (!expectedSize || rawRequest.size() < *expectedSize) {
+        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+        logger.trace("[HTTP] Received {} bytes from client", bytesReceived);
+        if (bytesReceived <= 0) break;
+        rawRequest.append(buffer, static_cast<std::size_t>(bytesReceived));
+
+        auto headerEnd = rawRequest.find("\r\n\r\n");
+        if (headerEnd == std::string::npos) {
+            if (rawRequest.size() > MaxHeaderBytes) {
+                requestTooLarge = true;
+                break;
+            }
+            continue;
+        }
+
+        if (headerEnd > MaxHeaderBytes) {
+            requestTooLarge = true;
+            break;
+        }
+        auto contentLength = contentLengthFromHeader(std::string_view(rawRequest).substr(0, headerEnd));
+        if (!contentLength || *contentLength > MaxBodyBytes) {
+            requestTooLarge = true;
+            break;
+        }
+        expectedSize = headerEnd + 4 + *contentLength;
+        if (rawRequest.size() >= *expectedSize) {
+            rawRequest.resize(*expectedSize);
+            break;
+        }
     }
     
     if (rawRequest.empty()) {
@@ -198,8 +255,6 @@ void HttpServer::handleClient(SOCKET clientSocket) {
     
     logger.trace("[HTTP] Raw request received ({} bytes)", rawRequest.size());
     
-    // 解析请求
-    HttpRequest request = parseRequest(rawRequest);
     HttpResponse response;
     
     // 添加 CORS 头
@@ -209,10 +264,18 @@ void HttpServer::handleClient(SOCKET clientSocket) {
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
     }
     
-    // 处理 OPTIONS 预检请求
-    if (request.method == "OPTIONS") {
-        response.setStatus(204, "No Content");
+    HttpRequest request;
+    if (requestTooLarge) {
+        response.setStatus(413, "Payload Too Large");
+        response.setJson("{\"error\": \"Request headers or body too large\"}");
     } else {
+        request = parseRequest(rawRequest);
+    }
+
+    // 处理 OPTIONS 预检请求
+    if (!requestTooLarge && request.method == "OPTIONS") {
+        response.setStatus(204, "No Content");
+    } else if (!requestTooLarge) {
         // 处理请求
         handleRequest(request, response);
     }
@@ -220,13 +283,21 @@ void HttpServer::handleClient(SOCKET clientSocket) {
     // 构建并发送响应
     std::string responseStr = buildResponse(response);
     logger.trace("[HTTP] Response size: {} bytes", responseStr.length());
-    int bytesSent = send(clientSocket, responseStr.c_str(), static_cast<int>(responseStr.length()), 0);
-    
-    if (bytesSent == SOCKET_ERROR) {
-        logger.warn("[HTTP] Failed to send response: {}", WSAGetLastError());
-    } else {
-        logger.trace("[HTTP] Sent {} bytes to client", bytesSent);
+    std::size_t totalSent = 0;
+    while (totalSent < responseStr.size()) {
+        int bytesSent = send(
+            clientSocket,
+            responseStr.data() + totalSent,
+            static_cast<int>(responseStr.size() - totalSent),
+            0
+        );
+        if (bytesSent == SOCKET_ERROR || bytesSent == 0) {
+            logger.warn("[HTTP] Failed to send complete response: {}", WSAGetLastError());
+            break;
+        }
+        totalSent += static_cast<std::size_t>(bytesSent);
     }
+    logger.trace("[HTTP] Sent {} bytes to client", totalSent);
     
     logger.debug("[HTTP] Response: {} {} (body: {} bytes)", 
                  response.statusCode, response.statusText, response.body.length());
@@ -237,7 +308,9 @@ void HttpServer::handleClient(SOCKET clientSocket) {
 
 HttpRequest HttpServer::parseRequest(const std::string& rawRequest) {
     HttpRequest request;
-    std::istringstream stream(rawRequest);
+    auto headerEnd = rawRequest.find("\r\n\r\n");
+    auto header = headerEnd == std::string::npos ? rawRequest : rawRequest.substr(0, headerEnd);
+    std::istringstream stream(header);
     std::string line;
     
     // 解析请求行
@@ -262,8 +335,8 @@ HttpRequest HttpServer::parseRequest(const std::string& rawRequest) {
     }
     
     // 解析头部
-    while (std::getline(stream, line) && line != "\r" && !line.empty()) {
-        if (line.back() == '\r') {
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
         if (line.empty()) break;
@@ -276,19 +349,12 @@ HttpRequest HttpServer::parseRequest(const std::string& rawRequest) {
             while (!value.empty() && value[0] == ' ') {
                 value = value.substr(1);
             }
+            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) value.pop_back();
             request.headers[key] = value;
         }
     }
-    
-    // 读取 body（如果有）
-    std::string remaining;
-    while (std::getline(stream, line)) {
-        remaining += line + "\n";
-    }
-    if (!remaining.empty() && remaining.back() == '\n') {
-        remaining.pop_back();
-    }
-    request.body = remaining;
+
+    if (headerEnd != std::string::npos) request.body = rawRequest.substr(headerEnd + 4);
     
     return request;
 }

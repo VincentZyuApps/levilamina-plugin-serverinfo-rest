@@ -16,6 +16,7 @@
 namespace serverinfo_rest {
 
 class HttpServer;
+class PlayerDataStore;
 
 // 缓存的玩家信息结构
 struct CachedPlayerInfo {
@@ -64,6 +65,7 @@ private:
     ll::mod::NativeMod& mSelf;
     Config mConfig;
     std::unique_ptr<HttpServer> mHttpServer;
+    std::unique_ptr<PlayerDataStore> mPlayerDataStore;
 
     // 玩家缓存 (线程安全)
     mutable std::mutex mPlayerCacheMutex;
@@ -73,17 +75,22 @@ private:
     ll::event::ListenerPtr mPlayerJoinListener;
     ll::event::ListenerPtr mPlayerLeaveListener;
     ll::event::ListenerPtr mServerTickListener;
+    ll::event::ListenerPtr mPlayerConnectListener;
+    ll::event::ListenerPtr mPlayerDestroyBlockListener;
+    ll::event::ListenerPtr mMobDieListener;
 
     mutable std::mutex mTpsMutex;
     std::deque<double> mTpsSamples;
     std::chrono::steady_clock::time_point mTpsBucketStartedAt = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point mStartedAt = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point mLastDataSaveAt = std::chrono::steady_clock::now();
     unsigned int mTicksInCurrentBucket = 0;
 
     // 缓存更新方法
     void onPlayerJoin(const std::string& xuid, const CachedPlayerInfo& info);
     void onPlayerLeave(const std::string& xuid);
     void onServerTick();
+    void savePlayerData(bool force = false);
 };
 
 } // namespace serverinfo_rest
