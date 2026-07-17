@@ -41,7 +41,8 @@ class ServerInfoRestMod {
 public:
     static ServerInfoRestMod& getInstance();
 
-    ServerInfoRestMod() : mSelf(*ll::mod::NativeMod::current()) {}
+    ServerInfoRestMod();
+    ~ServerInfoRestMod();
 
     [[nodiscard]] ll::mod::NativeMod& getSelf() const { return mSelf; }
 

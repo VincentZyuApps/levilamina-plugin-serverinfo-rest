@@ -222,6 +222,10 @@ static ll::io::LogLevel parseLogLevel(const std::string& levelStr) {
     return ll::io::LogLevel::Info;
 }
 
+ServerInfoRestMod::ServerInfoRestMod() : mSelf(*ll::mod::NativeMod::current()) {}
+
+ServerInfoRestMod::~ServerInfoRestMod() = default;
+
 ServerInfoRestMod& ServerInfoRestMod::getInstance() {
     static ServerInfoRestMod instance;
     return instance;
