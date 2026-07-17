@@ -169,7 +169,7 @@ GET /
 ```json
 {
     "name": "serverinfo-rest",
-    "version": "0.1.0",
+    "version": "0.2.2-alpha.3",
     "description": "REST API for Minecraft Bedrock Server information",
     "endpoints": {
         "GET /api/v1/status": "Server status overview",
@@ -207,7 +207,7 @@ GET /api/v1/status
 {
     "status": "online",
     "plugin": "serverinfo-rest",
-    "version": "0.1.0",
+    "version": "0.2.2-alpha.3",
     "playerCount": 5
 }
 ```
@@ -391,23 +391,22 @@ git commit -m "build release. feat: add new API endpoint"
 
 版本号**唯一数据源**为 [`tooth.json`](tooth.json)。发版流程：
 
-1. 修改 `tooth.json` 中的版本号
-2. 运行脚本同步更新所有文件中的版本号：
+1. 运行脚本同步更新所有文件中的版本号：
 
 ```bash
 python scripts/bump_version.py 1.0.1
 ```
 
-脚本会自动更新以下 5 处：
+脚本会自动更新以下 4 处：
 - `tooth.json` — 版本号唯一数据源
 - `README.md` — 根端点与 status 端点中的版本示例
 - `src/mod/ServerInfoRestMod.cpp` — `/status` 与 `/` 路由中的版本响应
 
-3. 提交并推送触发自动发布：
+2. 检查差异后，提交并推送触发自动发布：
 
 ```bash
 git add -A
-git commit -m "build release. bump: 0.1.0 → 0.1.1"
+git commit -m "chore(release): 发布 vX.Y.Z-word.W [build release]"
 git push
 ```
 
