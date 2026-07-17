@@ -437,7 +437,7 @@ bool ServerInfoRestMod::enable() {
                 player.getRealName(),
                 player.getXuid()
             );
-            player.disconnect("请先在群内使用绑定白名单指令绑定 Xbox 玩家名");
+            player.Player::disconnect("请先在群内使用绑定白名单指令绑定 Xbox 玩家名");
             event.cancel();
         },
         ll::event::EventPriority::Highest
