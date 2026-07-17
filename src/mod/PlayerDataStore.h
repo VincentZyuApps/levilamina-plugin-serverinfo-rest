@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -60,6 +61,10 @@ public:
 
     bool load(std::string& error);
     bool save(std::string& error, bool force = false);
+    [[nodiscard]] bool isAvailable() const { return mAvailable.load(); }
+    [[nodiscard]] bool wasRecoveredFromBackup() const { return mRecoveredFromBackup.load(); }
+    [[nodiscard]] std::filesystem::path backupPath() const;
+    [[nodiscard]] std::vector<std::string> authorizedPlayerNames() const;
 
     void playerJoined(
         const std::string& xuid,
@@ -106,6 +111,7 @@ private:
     void markChanged();
 
     std::filesystem::path mFilePath;
+    mutable std::mutex mSaveMutex;
     mutable std::mutex mMutex;
     std::unordered_map<std::string, PlayerRecord> mPlayers;
     std::unordered_map<std::string, std::int64_t> mActiveSessions;
@@ -113,6 +119,8 @@ private:
     std::vector<AdminWhitelistGrant> mAdminWhitelist;
     std::uint64_t mRevision = 0;
     bool mDirty = false;
+    std::atomic<bool> mAvailable{true};
+    std::atomic<bool> mRecoveredFromBackup{false};
 };
 
 } // namespace serverinfo_rest

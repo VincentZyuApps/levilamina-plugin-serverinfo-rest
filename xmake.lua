@@ -12,6 +12,15 @@ end
 
 add_requires("levibuildscript")
 
+option("build_tests")
+    set_default(false)
+    set_showmenu(true)
+option_end()
+
+if has_config("build_tests") then
+    add_requires("gtest", {configs = {main = true}})
+end
+
 if not has_config("vs_runtime") then
     set_runtimes("MD")
 end
@@ -40,3 +49,12 @@ target("serverinfo-rest") -- 插件名称
     else
         add_defines("LL_PLAT_C")
     end
+
+target("serverinfo-rest-tests")
+    set_enabled(has_config("build_tests"))
+    set_kind("binary")
+    set_languages("c++20")
+    add_defines("NOMINMAX", "UNICODE")
+    add_packages("gtest")
+    add_files("test/player_data_store_test.cpp", "src/mod/PlayerDataStore.cpp")
+    add_includedirs("src")

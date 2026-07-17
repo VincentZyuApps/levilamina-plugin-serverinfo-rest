@@ -1,18 +1,31 @@
 #include "mod/PlayerDataStore.h"
 
-#include "ll/api/io/FileUtils.h"
-
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <exception>
+#include <fstream>
 #include <limits>
+#include <sstream>
+#include <system_error>
+#include <unordered_set>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace serverinfo_rest {
 namespace {
 
 constexpr int DataVersion = 1;
+
+struct DecodedData {
+    std::unordered_map<std::string, PlayerRecord> players;
+    std::vector<WhitelistBinding> bindings;
+    std::vector<AdminWhitelistGrant> adminWhitelist;
+};
 
 std::string normalize(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
@@ -41,89 +54,296 @@ std::string readString(const nlohmann::json& json, const char* key) {
     return it != json.end() && it->is_string() ? it->get<std::string>() : std::string{};
 }
 
+bool decodeData(const std::string& content, DecodedData& decoded, std::string& error) {
+    auto json = nlohmann::json::parse(content, nullptr, false, true);
+    if (json.is_discarded() || !json.is_object()) {
+        error = "invalid JSON document";
+        return false;
+    }
+    try {
+        const auto version = json.find("version");
+        if (version == json.end() || !version->is_number_integer() || version->get<int>() != DataVersion) {
+            error = "unsupported or missing data version";
+            return false;
+        }
+
+    const auto playersIt = json.find("players");
+    const auto bindingsIt = json.find("bindings");
+    const auto adminIt = json.find("adminWhitelist");
+    if (playersIt == json.end() || !playersIt->is_array()
+        || bindingsIt == json.end() || !bindingsIt->is_array()
+        || adminIt == json.end() || !adminIt->is_array()) {
+        error = "players, bindings and adminWhitelist must be arrays";
+        return false;
+    }
+
+    DecodedData candidate;
+    for (const auto& item : *playersIt) {
+        if (!item.is_object()) {
+            error = "players contains a non-object item";
+            return false;
+        }
+        PlayerRecord record;
+        record.xuid = readString(item, "xuid");
+        if (record.xuid.empty()) {
+            error = "player record is missing xuid";
+            return false;
+        }
+        record.uuid = readString(item, "uuid");
+        record.name = readString(item, "name");
+        record.firstSeenMs = readInt64(item, "firstSeenMs");
+        record.lastSeenMs = readInt64(item, "lastSeenMs");
+        record.totalPlayMs = readInt64(item, "totalPlayMs");
+        record.joinCount = readUInt64(item, "joinCount");
+        record.blocksMined = readUInt64(item, "blocksMined");
+        record.mobsKilled = readUInt64(item, "mobsKilled");
+        candidate.players[record.xuid] = std::move(record);
+    }
+
+    for (const auto& item : *bindingsIt) {
+        if (!item.is_object()) {
+            error = "bindings contains a non-object item";
+            return false;
+        }
+        WhitelistBinding binding;
+        binding.platform = readString(item, "platform");
+        binding.selfId = readString(item, "selfId");
+        binding.userId = readString(item, "userId");
+        binding.channelId = readString(item, "channelId");
+        binding.playerName = readString(item, "playerName");
+        binding.xuid = readString(item, "xuid");
+        binding.boundAtMs = readInt64(item, "boundAtMs");
+        if (binding.platform.empty() || binding.userId.empty() || binding.playerName.empty()) {
+            error = "binding is missing platform, userId or playerName";
+            return false;
+        }
+        candidate.bindings.push_back(std::move(binding));
+    }
+
+    for (const auto& item : *adminIt) {
+        if (!item.is_object()) {
+            error = "adminWhitelist contains a non-object item";
+            return false;
+        }
+        AdminWhitelistGrant grant;
+        grant.playerName = readString(item, "playerName");
+        grant.xuid = readString(item, "xuid");
+        grant.addedBy = readString(item, "addedBy");
+        grant.addedAtMs = readInt64(item, "addedAtMs");
+        if (grant.playerName.empty()) {
+            error = "administrator allowlist grant is missing playerName";
+            return false;
+        }
+        candidate.adminWhitelist.push_back(std::move(grant));
+    }
+
+        decoded = std::move(candidate);
+        return true;
+    } catch (const std::exception& exception) {
+        error = "invalid data value: " + std::string(exception.what());
+        return false;
+    }
+}
+
+bool readTextFile(const std::filesystem::path& path, std::string& content, std::string& error) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        error = "failed to open " + path.string();
+        return false;
+    }
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    if (stream.bad()) {
+        error = "failed to read " + path.string();
+        return false;
+    }
+    content = buffer.str();
+    return true;
+}
+
+bool writeTextFile(const std::filesystem::path& path, const std::string& content, std::string& error) {
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        error = "failed to open " + path.string() + " for writing";
+        return false;
+    }
+    stream.write(content.data(), static_cast<std::streamsize>(content.size()));
+    stream.flush();
+    if (!stream) {
+        error = "failed to write " + path.string();
+        return false;
+    }
+    return true;
+}
+
+std::filesystem::path corruptPathFor(const std::filesystem::path& path) {
+    const auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+    return path.parent_path() / (path.filename().string() + ".corrupt-" + std::to_string(timestamp) + ".json");
+}
+
+std::filesystem::path preserveCorruptFile(const std::filesystem::path& path, std::string& warning) {
+    if (!std::filesystem::exists(path)) return {};
+    auto destination = corruptPathFor(path);
+    std::error_code ec;
+    std::filesystem::rename(path, destination, ec);
+    if (ec) {
+        warning = "failed to preserve corrupt file " + path.string() + ": " + ec.message();
+        return {};
+    }
+    return destination;
+}
+
+bool replaceFileAtomically(
+    const std::filesystem::path& temporary,
+    const std::filesystem::path& destination,
+    const std::filesystem::path& backup,
+    std::string& error
+) {
+#ifdef _WIN32
+    if (std::filesystem::exists(destination)) {
+        const auto nextBackup = std::filesystem::path(backup.string() + ".tmp");
+        std::error_code cleanupError;
+        std::filesystem::remove(nextBackup, cleanupError);
+        if (::ReplaceFileW(
+                destination.c_str(),
+                temporary.c_str(),
+                nextBackup.c_str(),
+                REPLACEFILE_WRITE_THROUGH,
+                nullptr,
+                nullptr
+            ) != 0) {
+            if (::MoveFileExW(
+                    nextBackup.c_str(),
+                    backup.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+                ) == 0) {
+                std::error_code cleanupError;
+                std::filesystem::remove(nextBackup, cleanupError);
+            }
+            return true;
+        }
+        error = "ReplaceFileW failed with error " + std::to_string(::GetLastError());
+        return false;
+    }
+    if (::MoveFileExW(
+            temporary.c_str(),
+            destination.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+        ) != 0) {
+        return true;
+    }
+    error = "MoveFileExW failed with error " + std::to_string(::GetLastError());
+    return false;
+#else
+    std::error_code ec;
+    if (std::filesystem::exists(destination)) {
+        std::filesystem::copy_file(destination, backup, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) {
+            error = "failed to create backup: " + ec.message();
+            return false;
+        }
+    }
+    std::filesystem::rename(temporary, destination, ec);
+    if (ec) {
+        error = "failed to replace data file: " + ec.message();
+        return false;
+    }
+    return true;
+#endif
+}
+
 } // namespace
 
 PlayerDataStore::PlayerDataStore(std::filesystem::path filePath) : mFilePath(std::move(filePath)) {}
 
 bool PlayerDataStore::load(std::string& error) {
-    if (!std::filesystem::exists(mFilePath)) return true;
+    std::lock_guard<std::mutex> saveLock(mSaveMutex);
+    mRecoveredFromBackup = false;
 
-    auto content = ll::file_utils::readFile(mFilePath);
-    if (!content) {
-        error = "failed to read " + mFilePath.string();
-        return false;
-    }
-
-    auto json = nlohmann::json::parse(*content, nullptr, false, true);
-    if (json.is_discarded() || !json.is_object()) {
-        error = "invalid player data JSON: " + mFilePath.string();
-        return false;
-    }
-
-    std::unordered_map<std::string, PlayerRecord> players;
-    std::vector<WhitelistBinding> bindings;
-    std::vector<AdminWhitelistGrant> adminWhitelist;
-
-    auto playersIt = json.find("players");
-    if (playersIt != json.end() && playersIt->is_array()) {
-        for (const auto& item : *playersIt) {
-            if (!item.is_object()) continue;
-            PlayerRecord record;
-            record.xuid = readString(item, "xuid");
-            if (record.xuid.empty()) continue;
-            record.uuid = readString(item, "uuid");
-            record.name = readString(item, "name");
-            record.firstSeenMs = readInt64(item, "firstSeenMs");
-            record.lastSeenMs = readInt64(item, "lastSeenMs");
-            record.totalPlayMs = readInt64(item, "totalPlayMs");
-            record.joinCount = readUInt64(item, "joinCount");
-            record.blocksMined = readUInt64(item, "blocksMined");
-            record.mobsKilled = readUInt64(item, "mobsKilled");
-            players[record.xuid] = std::move(record);
+    auto applyDecoded = [this](DecodedData&& decoded) {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mPlayers = std::move(decoded.players);
+        mBindings = std::move(decoded.bindings);
+        mAdminWhitelist = std::move(decoded.adminWhitelist);
+        mActiveSessions.clear();
+        mDirty = false;
+        mRevision = 0;
+    };
+    auto tryLoad = [](const std::filesystem::path& path, DecodedData& decoded, std::string& reason) {
+        std::string content;
+        if (!readTextFile(path, content, reason)) return false;
+        if (!decodeData(content, decoded, reason)) {
+            reason = path.string() + ": " + reason;
+            return false;
         }
+        return true;
+    };
+
+    const auto backup = backupPath();
+    if (!std::filesystem::exists(mFilePath) && !std::filesystem::exists(backup)) {
+        applyDecoded({});
+        mAvailable = true;
+        return true;
     }
 
-    auto bindingsIt = json.find("bindings");
-    if (bindingsIt != json.end() && bindingsIt->is_array()) {
-        for (const auto& item : *bindingsIt) {
-            if (!item.is_object()) continue;
-            WhitelistBinding binding;
-            binding.platform = readString(item, "platform");
-            binding.selfId = readString(item, "selfId");
-            binding.userId = readString(item, "userId");
-            binding.channelId = readString(item, "channelId");
-            binding.playerName = readString(item, "playerName");
-            binding.xuid = readString(item, "xuid");
-            binding.boundAtMs = readInt64(item, "boundAtMs");
-            if (binding.platform.empty() || binding.userId.empty() || binding.playerName.empty()) continue;
-            bindings.push_back(std::move(binding));
+    std::string primaryReason;
+    if (std::filesystem::exists(mFilePath)) {
+        DecodedData decoded;
+        if (tryLoad(mFilePath, decoded, primaryReason)) {
+            applyDecoded(std::move(decoded));
+            mAvailable = true;
+            return true;
         }
+        std::string preserveWarning;
+        const auto corrupt = preserveCorruptFile(mFilePath, preserveWarning);
+        if (!corrupt.empty()) primaryReason += "; preserved as " + corrupt.string();
+        if (!preserveWarning.empty()) primaryReason += "; " + preserveWarning;
+    } else {
+        primaryReason = "primary data file is missing";
     }
 
-    auto adminIt = json.find("adminWhitelist");
-    if (adminIt != json.end() && adminIt->is_array()) {
-        for (const auto& item : *adminIt) {
-            if (!item.is_object()) continue;
-            AdminWhitelistGrant grant;
-            grant.playerName = readString(item, "playerName");
-            grant.xuid = readString(item, "xuid");
-            grant.addedBy = readString(item, "addedBy");
-            grant.addedAtMs = readInt64(item, "addedAtMs");
-            if (!grant.playerName.empty()) adminWhitelist.push_back(std::move(grant));
+    std::string backupReason;
+    if (std::filesystem::exists(backup)) {
+        DecodedData decoded;
+        if (tryLoad(backup, decoded, backupReason)) {
+            applyDecoded(std::move(decoded));
+            std::error_code directoryError;
+            std::filesystem::create_directories(mFilePath.parent_path(), directoryError);
+            const auto temporary = std::filesystem::path(mFilePath.string() + ".tmp");
+            std::error_code ec;
+            std::filesystem::copy_file(backup, temporary, std::filesystem::copy_options::overwrite_existing, ec);
+            std::string restoreError;
+            if (ec || !replaceFileAtomically(temporary, mFilePath, backup, restoreError)) {
+                error = "loaded backup, but failed to restore primary file: "
+                    + (ec ? ec.message() : restoreError) + "; primary error: " + primaryReason;
+            } else {
+                error = "recovered player data from " + backup.string() + "; primary error: " + primaryReason;
+            }
+            mRecoveredFromBackup = true;
+            mAvailable = true;
+            return true;
         }
+        std::string preserveWarning;
+        const auto corrupt = preserveCorruptFile(backup, preserveWarning);
+        if (!corrupt.empty()) backupReason += "; preserved as " + corrupt.string();
+        if (!preserveWarning.empty()) backupReason += "; " + preserveWarning;
+    } else {
+        backupReason = "backup data file is missing";
     }
 
-    std::lock_guard<std::mutex> lock(mMutex);
-    mPlayers = std::move(players);
-    mBindings = std::move(bindings);
-    mAdminWhitelist = std::move(adminWhitelist);
-    mActiveSessions.clear();
-    mDirty = false;
-    mRevision = 0;
-    return true;
+    mAvailable = false;
+    error = "player data unavailable; primary: " + primaryReason + "; backup: " + backupReason;
+    return false;
 }
 
 bool PlayerDataStore::save(std::string& error, bool force) {
+    std::lock_guard<std::mutex> saveLock(mSaveMutex);
+    if (!mAvailable) {
+        error = "player data store is unavailable; refusing to overwrite damaged data";
+        return false;
+    }
     nlohmann::json json;
     std::uint64_t revision = 0;
     {
@@ -175,15 +395,44 @@ bool PlayerDataStore::save(std::string& error, bool force) {
         revision = mRevision;
     }
 
-    std::filesystem::create_directories(mFilePath.parent_path());
-    if (!ll::file_utils::writeFile(mFilePath, json.dump(2))) {
-        error = "failed to write " + mFilePath.string();
+    std::error_code directoryError;
+    std::filesystem::create_directories(mFilePath.parent_path(), directoryError);
+    if (directoryError) {
+        error = "failed to create player data directory: " + directoryError.message();
         return false;
     }
+    const auto temporary = std::filesystem::path(mFilePath.string() + ".tmp");
+    const auto serialized = json.dump(2);
+    if (!writeTextFile(temporary, serialized, error)) return false;
+
+    std::string written;
+    DecodedData verification;
+    if (!readTextFile(temporary, written, error) || !decodeData(written, verification, error)) {
+        error = "temporary player data validation failed: " + error;
+        return false;
+    }
+    if (!replaceFileAtomically(temporary, mFilePath, backupPath(), error)) return false;
 
     std::lock_guard<std::mutex> lock(mMutex);
     if (mRevision == revision) mDirty = false;
     return true;
+}
+
+std::filesystem::path PlayerDataStore::backupPath() const {
+    return std::filesystem::path(mFilePath.string() + ".bak");
+}
+
+std::vector<std::string> PlayerDataStore::authorizedPlayerNames() const {
+    std::lock_guard<std::mutex> lock(mMutex);
+    std::vector<std::string> result;
+    std::unordered_set<std::string> seen;
+    result.reserve(mBindings.size() + mAdminWhitelist.size());
+    auto append = [&](const std::string& name) {
+        if (!name.empty() && seen.insert(normalize(name)).second) result.push_back(name);
+    };
+    for (const auto& binding : mBindings) append(binding.playerName);
+    for (const auto& grant : mAdminWhitelist) append(grant.playerName);
+    return result;
 }
 
 void PlayerDataStore::playerJoined(

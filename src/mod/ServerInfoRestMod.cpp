@@ -161,6 +161,22 @@ bool commandAllowed(const std::string& command, const std::vector<std::string>& 
     return false;
 }
 
+bool isFailOpenPolicy(const std::string& policy) {
+    std::string normalized = policy;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return normalized == "fail-open";
+}
+
+bool isFailClosedPolicy(const std::string& policy) {
+    std::string normalized = policy;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return normalized == "fail-closed";
+}
+
 bool validPlayerName(const std::string& name) {
     if (name.empty() || name.size() > 64) return false;
     return std::none_of(name.begin(), name.end(), [](unsigned char ch) {
@@ -321,7 +337,9 @@ void ServerInfoRestMod::onServerTick() {
 }
 
 void ServerInfoRestMod::onPlayerJoin(const std::string& xuid, const CachedPlayerInfo& info) {
-    if (mPlayerDataStore) mPlayerDataStore->playerJoined(xuid, info.uuid, info.name, unixTimeMs());
+    if (mPlayerDataStore && mPlayerDataStore->isAvailable()) {
+        mPlayerDataStore->playerJoined(xuid, info.uuid, info.name, unixTimeMs());
+    }
     std::lock_guard<std::mutex> lock(mPlayerCacheMutex);
     mPlayerCache[xuid] = info;
     getSelf().getLogger().info("[Cache] Player joined: {} (xuid: {})", info.name, xuid);
@@ -333,7 +351,9 @@ void ServerInfoRestMod::onPlayerJoin(const std::string& xuid, const CachedPlayer
 }
 
 void ServerInfoRestMod::onPlayerLeave(const std::string& xuid) {
-    if (mPlayerDataStore) mPlayerDataStore->playerLeft(xuid, unixTimeMs());
+    if (mPlayerDataStore && mPlayerDataStore->isAvailable()) {
+        mPlayerDataStore->playerLeft(xuid, unixTimeMs());
+    }
     std::lock_guard<std::mutex> lock(mPlayerCacheMutex);
     auto it = mPlayerCache.find(xuid);
     if (it != mPlayerCache.end()) {
@@ -347,7 +367,7 @@ void ServerInfoRestMod::onPlayerLeave(const std::string& xuid) {
 }
 
 void ServerInfoRestMod::savePlayerData(bool force) {
-    if (!mPlayerDataStore) return;
+    if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) return;
     std::string error;
     if (!mPlayerDataStore->save(error, force)) {
         getSelf().getLogger().error("[Data] {}", error);
@@ -381,11 +401,25 @@ bool ServerInfoRestMod::load() {
             logger.error("Failed to save default configurations!");
         }
     }
+    if (!isFailOpenPolicy(mConfig.whitelistDataFailurePolicy)
+        && !isFailClosedPolicy(mConfig.whitelistDataFailurePolicy)) {
+        logger.warn(
+            "Unknown whitelistDataFailurePolicy '{}'; falling back to fail-open",
+            mConfig.whitelistDataFailurePolicy
+        );
+        mConfig.whitelistDataFailurePolicy = "fail-open";
+    }
 
     mPlayerDataStore = std::make_unique<PlayerDataStore>(getSelf().getDataDir() / "player-data.json");
     std::string playerDataError;
     if (!mPlayerDataStore->load(playerDataError)) {
-        logger.error("Failed to load player history: {}", playerDataError);
+        logger.error("[Data] Failed to load player data: {}", playerDataError);
+        logger.error(
+            "[Data] Whitelist failure policy is {}; damaged data will not be overwritten",
+            mConfig.whitelistDataFailurePolicy
+        );
+    } else if (!playerDataError.empty()) {
+        logger.warn("[Data] {}", playerDataError);
     }
 
     // 设置日志级别
@@ -403,6 +437,9 @@ bool ServerInfoRestMod::load() {
     logger.debug("  - enableCommandExecution: {}", mConfig.enableCommandExecution);
     logger.debug("  - enableWhitelistBinding: {}", mConfig.enableWhitelistBinding);
     logger.debug("  - enforceWhitelistBinding: {}", mConfig.enforceWhitelistBinding);
+    logger.debug("  - operatorBypassBinding: {}", mConfig.operatorBypassBinding);
+    logger.debug("  - whitelistDataFailurePolicy: {}", mConfig.whitelistDataFailurePolicy);
+    logger.debug("  - repairMissingAllowlistEntriesOnStartup: {}", mConfig.repairMissingAllowlistEntriesOnStartup);
     if (mConfig.enableToken) {
         logger.info("Token authentication is ENABLED");
         if (mConfig.token.empty()) {
@@ -424,9 +461,40 @@ bool ServerInfoRestMod::enable() {
     mStartedAt = std::chrono::steady_clock::now();
     mLastDataSaveAt = mStartedAt;
 
+    if (mConfig.repairMissingAllowlistEntriesOnStartup
+        && mPlayerDataStore
+        && mPlayerDataStore->isAvailable()) {
+        const auto authorizedNames = mPlayerDataStore->authorizedPlayerNames();
+        logger.info("[Whitelist] Reconciling {} stored authorization(s) with the BDS allowlist", authorizedNames.size());
+        for (const auto& playerName : authorizedNames) {
+            if (!validPlayerName(playerName)) {
+                logger.warn("[Whitelist] Skipping invalid stored player name during startup reconcile");
+                continue;
+            }
+            const auto result = executeCommandOnCurrentServerThread("allowlist add \"" + playerName + "\"");
+            logger.debug(
+                "[Whitelist] Startup reconcile for {}: success={}, output={}",
+                playerName,
+                result.success,
+                result.output
+            );
+        }
+    }
+
     mPlayerConnectListener = eventBus.emplaceListener<ll::event::player::PlayerConnectEvent>(
         [this](ll::event::player::PlayerConnectEvent& event) {
-            if (!mConfig.enforceWhitelistBinding || !mPlayerDataStore) return;
+            if (!mConfig.enforceWhitelistBinding) return;
+            if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
+                if (isFailOpenPolicy(mConfig.whitelistDataFailurePolicy)) return;
+                auto& player = event.self();
+                getSelf().getLogger().warn(
+                    "[Whitelist] Rejected {} because player data is unavailable and policy is fail-closed",
+                    player.getRealName()
+                );
+                player.Player::disconnect("白名单数据暂时不可用，请联系服务器管理员");
+                event.cancel();
+                return;
+            }
             auto& player = event.self();
             if (mPlayerDataStore->authorizePlayer(
                     player.getRealName(),
@@ -496,7 +564,7 @@ bool ServerInfoRestMod::enable() {
 
     mPlayerDestroyBlockListener = eventBus.emplaceListener<ll::event::player::PlayerDestroyBlockEvent>(
         [this](ll::event::player::PlayerDestroyBlockEvent& event) {
-            if (event.isCancelled() || !mPlayerDataStore) return;
+            if (event.isCancelled() || !mPlayerDataStore || !mPlayerDataStore->isAvailable()) return;
             auto& player = event.self();
             mPlayerDataStore->incrementBlocksMined(player.getXuid(), player.getRealName(), unixTimeMs());
         },
@@ -506,7 +574,8 @@ bool ServerInfoRestMod::enable() {
 
     mMobDieListener = eventBus.emplaceListener<ll::event::entity::MobDieEvent>(
         [this](ll::event::entity::MobDieEvent& event) {
-            if (!mPlayerDataStore || event.self().isPlayer() || !event.source().isEntitySource()) return;
+            if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()
+                || event.self().isPlayer() || !event.source().isEntitySource()) return;
             auto* player = event.self().getLastHurtByPlayer();
             if (!player) return;
             mPlayerDataStore->incrementMobsKilled(player->getXuid(), player->getRealName(), unixTimeMs());
@@ -754,7 +823,7 @@ bool ServerInfoRestMod::enable() {
     // GET /api/v1/players/history - 历史玩家分页列表
     mHttpServer->get(prefix + "/players/history", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         if (!validateToken(req, res)) return;
-        if (!mPlayerDataStore) {
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Player data store is unavailable\"}");
             return;
@@ -782,7 +851,7 @@ bool ServerInfoRestMod::enable() {
     // GET /api/v1/players/stats?name=<name-or-xuid> - 历史玩家统计
     mHttpServer->get(prefix + "/players/stats", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         if (!validateToken(req, res)) return;
-        if (!mPlayerDataStore) {
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Player data store is unavailable\"}");
             return;
@@ -813,7 +882,7 @@ bool ServerInfoRestMod::enable() {
             res.setJson("{\"error\": \"Whitelist binding is disabled\"}");
             return;
         }
-        if (!mPlayerDataStore) {
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Player data store is unavailable\"}");
             return;
@@ -875,9 +944,14 @@ bool ServerInfoRestMod::enable() {
         HttpResponse& res
     ) {
         if (!validateAdminToken(req, res)) return;
-        if (!mConfig.enableWhitelistBinding || !mPlayerDataStore) {
+        if (!mConfig.enableWhitelistBinding) {
             res.setStatus(403, "Forbidden");
-            res.setJson("{\"error\": \"Whitelist binding is unavailable\"}");
+            res.setJson("{\"error\": \"Whitelist binding is disabled\"}");
+            return;
+        }
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
+            res.setStatus(503, "Service Unavailable");
+            res.setJson("{\"error\": \"Player data store is unavailable\"}");
             return;
         }
         auto body = parseJsonBody(req, res);
@@ -926,7 +1000,7 @@ bool ServerInfoRestMod::enable() {
         HttpResponse& res
     ) {
         if (!validateAdminToken(req, res)) return;
-        if (!mPlayerDataStore) {
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Player data store is unavailable\"}");
             return;
@@ -971,7 +1045,7 @@ bool ServerInfoRestMod::enable() {
         HttpResponse& res
     ) {
         if (!validateAdminToken(req, res)) return;
-        if (!mPlayerDataStore) {
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Player data store is unavailable\"}");
             return;
@@ -1060,7 +1134,13 @@ bool ServerInfoRestMod::enable() {
     mHttpServer->get(prefix + "/health", [this](const HttpRequest&, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /health endpoint called");
         nlohmann::json json;
-        json["status"] = "healthy";
+        const auto dataAvailable = mPlayerDataStore && mPlayerDataStore->isAvailable();
+        json["status"] = dataAvailable ? "healthy" : "degraded";
+        json["playerData"] = {
+            {"available", dataAvailable},
+            {"recoveredFromBackup", mPlayerDataStore && mPlayerDataStore->wasRecoveredFromBackup()},
+            {"whitelistFailurePolicy", mConfig.whitelistDataFailurePolicy}
+        };
         json["timestamp"] = unixTimeMs();
         json["uptime"] = getUptimeMs();
         res.setJson(json.dump());
@@ -1073,6 +1153,9 @@ bool ServerInfoRestMod::enable() {
         json["name"] = "serverinfo-rest";
         json["version"] = PluginVersion;
         json["description"] = "REST API for Minecraft Bedrock Server information";
+        const auto dataAvailable = mPlayerDataStore && mPlayerDataStore->isAvailable();
+        json["status"] = dataAvailable ? "healthy" : "degraded";
+        json["playerDataAvailable"] = dataAvailable;
         json["endpoints"] = {
             {"GET " + prefix + "/status", "Server status overview"},
             {"GET " + prefix + "/overview", "Combined online status snapshot"},
@@ -1138,7 +1221,9 @@ bool ServerInfoRestMod::disable() {
 
     const auto nowMs = unixTimeMs();
     for (const auto& player : getPlayerCache()) {
-        if (mPlayerDataStore) mPlayerDataStore->playerLeft(player.xuid, nowMs);
+        if (mPlayerDataStore && mPlayerDataStore->isAvailable()) {
+            mPlayerDataStore->playerLeft(player.xuid, nowMs);
+        }
     }
     savePlayerData(true);
     

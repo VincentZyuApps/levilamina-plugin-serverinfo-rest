@@ -112,10 +112,13 @@ jobs:
         run: xmake g --policies=package.precompiled:n
 
       - name: Configure
-        run: xmake f -vD -y -p windows -a x64 -m release
+        run: xmake f -vD -y -p windows -a x64 -m release --build_tests=y
 
       - name: Build
         run: xmake -vD
+
+      - name: Run player data tests
+        run: xmake run serverinfo-rest-tests
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

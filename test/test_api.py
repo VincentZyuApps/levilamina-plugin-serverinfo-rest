@@ -37,10 +37,26 @@ def print_section(emoji: str, title: str):
     print("-" * 40)
 
 
-def request_api(url: str, timeout: int = 10) -> tuple[int, dict | str | None]:
-    """发送 GET 请求并返回 (状态码, 响应内容)"""
+def request_api(
+    url: str,
+    timeout: int = 10,
+    method: str = "GET",
+    body: dict | None = None,
+    bearer_token: str | None = None,
+) -> tuple[int, dict | str | None]:
+    """发送请求并返回 (状态码, 响应内容)。"""
     try:
-        req = Request(url, headers={"User-Agent": "serverinfo-rest-tester/1.0"})
+        headers = {
+            "User-Agent": "serverinfo-rest-tester/1.0",
+            "Accept": "application/json",
+        }
+        if bearer_token:
+            headers["Authorization"] = f"Bearer {bearer_token}"
+        payload = None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+            payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        req = Request(url, data=payload, headers=headers, method=method)
         with urlopen(req, timeout=timeout) as response:
             content = response.read().decode("utf-8")
             try:
@@ -93,6 +109,14 @@ def main():
     parser.add_argument("--prefix", default="/api/v1", help="API 前缀 (默认: /api/v1)")
     parser.add_argument("--player", help="要查询的玩家名 (可选)")
     parser.add_argument("--token", help="访问令牌 (如果服务器启用了 token 认证)")
+    parser.add_argument("--admin-token", help="管理 API 令牌；仅配合 --run-admin-tests 使用")
+    parser.add_argument(
+        "--run-admin-tests",
+        action="store_true",
+        help="显式运行会修改绑定和 BDS 白名单的管理接口测试",
+    )
+    parser.add_argument("--admin-player", help="管理接口测试专用玩家名，请勿使用真实授权玩家")
+    parser.add_argument("--admin-command", default="list", help="管理接口测试命令 (默认: list)")
     parser.add_argument("--timeout", type=int, default=10, help="请求超时时间 (默认: 10秒)")
     
     args = parser.parse_args()
@@ -160,12 +184,54 @@ def main():
     print_section("📝", "[8/8] 玩家名列表")
     status, data = request_api(build_url(f"{api_base}/players/names"), args.timeout)
     results.append(("玩家名列表", print_response(status, data)))
+
+    print_section("📚", "[9/10] 历史玩家分页")
+    status, data = request_api(build_url(f"{api_base}/players/history", "page=1&pageSize=10"), args.timeout)
+    results.append(("历史玩家分页", print_response(status, data)))
     
     # 测试 8: 查询指定玩家 (如果提供了玩家名)
     if args.player:
         print_section("👤", f"[额外] 查询玩家: {args.player}")
         status, data = request_api(build_url(f"{api_base}/player", f"name={args.player}"), args.timeout)
         results.append((f"玩家 {args.player}", print_response(status, data)))
+
+        print_section("📈", f"[额外] 历史统计: {args.player}")
+        status, data = request_api(
+            build_url(f"{api_base}/players/stats", f"name={args.player}"),
+            args.timeout,
+        )
+        results.append((f"历史统计 {args.player}", print_response(status, data)))
+
+    if args.run_admin_tests:
+        if not args.admin_token or not args.admin_player:
+            parser.error("--run-admin-tests 必须同时提供 --admin-token 和 --admin-player")
+        print(colored("\n⚠️  即将执行会修改 player-data.json 与 BDS 白名单的管理接口测试", "yellow"))
+        admin_requests = [
+            ("执行命令", "/admin/command", {"command": args.admin_command, "requester": "api-smoke-test"}),
+            ("绑定白名单", "/whitelist/bind", {
+                "platform": "api-test", "selfId": "api-test-bot", "userId": "api-test-user",
+                "channelId": "api-test-channel", "playerName": args.admin_player,
+            }),
+            ("解绑白名单", "/whitelist/unbind", {
+                "platform": "api-test", "selfId": "api-test-bot", "userId": "api-test-user",
+            }),
+            ("管理员添加白名单", "/whitelist/add", {
+                "playerName": args.admin_player, "requester": "api-smoke-test",
+            }),
+            ("管理员移除白名单", "/whitelist/remove", {
+                "playerName": args.admin_player, "requester": "api-smoke-test",
+            }),
+        ]
+        for name, endpoint, body in admin_requests:
+            print_section("🛡️ ", f"[管理] {name}")
+            status, data = request_api(
+                f"{api_base}{endpoint}",
+                args.timeout,
+                method="POST",
+                body=body,
+                bearer_token=args.admin_token,
+            )
+            results.append((name, print_response(status, data)))
     
     # 打印结果汇总
     print_header("📋 测试结果汇总")

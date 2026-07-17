@@ -70,12 +70,22 @@ CommandExecutionResult executeCommandNative(const std::string& commandText) {
 
 } // namespace
 
+CommandExecutionResult executeCommandOnCurrentServerThread(const std::string& command) {
+    try {
+        return executeCommandNative(command);
+    } catch (const std::exception& error) {
+        return {false, false, error.what()};
+    } catch (...) {
+        return {false, false, "unknown command execution error"};
+    }
+}
+
 CommandExecutionResult executeCommandOnServerThread(const std::string& command, int timeoutMs) {
     auto promise = std::make_shared<std::promise<CommandExecutionResult>>();
     auto future = promise->get_future();
     ll::thread::ServerThreadExecutor::getDefault().execute([promise, command] {
         try {
-            promise->set_value(executeCommandNative(command));
+            promise->set_value(executeCommandOnCurrentServerThread(command));
         } catch (const std::exception& error) {
             promise->set_value({false, false, error.what()});
         } catch (...) {

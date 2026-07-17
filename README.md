@@ -2,8 +2,9 @@
 
 # serverinfo-rest
 
-🌐 基于基岩版 Minecraft LeviLamina 服务端的 REST API 服务端插件：提供 HTTP 接口查询服务器状态与玩家信息。
-🌐 A REST API plugin for LeviLamina Server(Minecraft Bedrock Edition) that provides HTTP interfaces to query server status and player information.
+> 🌐 基于基岩版 Minecraft LeviLamina 服务端的 REST API 服务端插件：提供 HTTP 接口查询服务器状态与玩家信息。
+
+> 🌐 A REST API plugin for LeviLamina Server(Minecraft Bedrock Edition) that provides HTTP interfaces to query server status and player information.
 
 [![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest)
 [![Gitee](https://img.shields.io/badge/Gitee-C71D23?style=for-the-badge&logo=gitee&logoColor=white)](https://gitee.com/vincent-zyu/levilamina-plugin-serverinfo-rest)
@@ -70,14 +71,25 @@ BDS服务端/
 
 ```json
 {
-    "version": 1,
+    "version": 2,
     "logLevel": "info",
     "host": "0.0.0.0",
     "port": 60202,
     "enableCors": true,
     "apiPrefix": "/api/v1",
     "enableToken": false,
-    "token": ""
+    "token": "",
+    "adminToken": "",
+    "enableCommandExecution": false,
+    "commandAllowPrefixes": [],
+    "commandTimeoutMs": 5000,
+    "commandOutputLimit": 4000,
+    "enableWhitelistBinding": true,
+    "enforceWhitelistBinding": true,
+    "operatorBypassBinding": false,
+    "whitelistDataFailurePolicy": "fail-open",
+    "repairMissingAllowlistEntriesOnStartup": true,
+    "dataSaveIntervalSeconds": 60
 }
 ```
 
@@ -85,7 +97,7 @@ BDS服务端/
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `version` | int | `1` | 配置文件版本 |
+| `version` | int | `2` | 配置文件版本 |
 | `logLevel` | string | `"info"` | 日志级别 |
 | `host` | string | `"0.0.0.0"` | HTTP 服务器监听地址 |
 | `port` | int | `60202` | HTTP 服务器监听端口 |
@@ -93,6 +105,17 @@ BDS服务端/
 | `apiPrefix` | string | `"/api/v1"` | API 路径前缀 |
 | `enableToken` | bool | `false` | 是否启用 Token 认证 |
 | `token` | string | `""` | 访问令牌 |
+| `adminToken` | string | `""` | 命令与白名单写接口使用的独立管理令牌，不能复用只读 Token |
+| `enableCommandExecution` | bool | `false` | 是否开放远程命令接口 |
+| `commandAllowPrefixes` | string[] | `[]` | 允许的命令前缀；空数组表示不额外限制 |
+| `commandTimeoutMs` | int | `5000` | 主线程命令执行等待上限，范围由插件约束 |
+| `commandOutputLimit` | int | `4000` | 命令返回文本最大长度 |
+| `enableWhitelistBinding` | bool | `true` | 是否开放聊天账号绑定与解绑接口 |
+| `enforceWhitelistBinding` | bool | `true` | 是否拒绝没有普通绑定或管理员直接授权的玩家 |
+| `operatorBypassBinding` | bool | `false` | OP 是否跳过绑定检查；默认关闭，确保所有玩家遵守同一规则 |
+| `whitelistDataFailurePolicy` | string | `"fail-open"` | 数据文件与备份都损坏时使用 `fail-open` 暂停拦截，或 `fail-closed` 拒绝无法验证的玩家 |
+| `repairMissingAllowlistEntriesOnStartup` | bool | `true` | 启动时对插件记录的有效授权执行幂等 `allowlist add`；不会删除 BDS 的额外白名单 |
+| `dataSaveIntervalSeconds` | int | `60` | 玩家历史与统计数据保存周期 |
 
 ### Token 认证
 
@@ -112,6 +135,22 @@ curl "http://localhost:60202/api/v1/player?name=Steve&token=your-secret-token"
 **错误响应**：
 - `401 Unauthorized` — 缺少 token：`{"error": "Missing token parameter"}`
 - `403 Forbidden` — token 错误：`{"error": "Invalid token"}`
+
+管理接口只接受 `Authorization: Bearer <adminToken>`，不接受 query token。只读接口推荐同样使用 Bearer Token，URL query 参数仅为兼容旧客户端保留。
+
+### 玩家数据与白名单所有权
+
+插件数据目录包含以下文件：
+
+- `player-data.json`：正式数据，保存玩家历史、统计、普通聊天账号绑定和管理员直接授权。
+- `player-data.json.bak`：上一次成功保存的数据，由原子替换流程自动维护。
+- `player-data.json.corrupt-<时间戳>.json`：启动时发现损坏的文件原样保留，便于人工恢复。
+
+每次保存先写入 `player-data.json.tmp`，重新解析校验成功后才原子替换正式文件。正式文件损坏时会自动尝试备份；正式文件与备份都损坏时，历史、统计及白名单写接口返回 `503`，并且插件绝不会用空数据覆盖损坏文件。
+
+`whitelistDataFailurePolicy=fail-open` 仅在数据不可用时临时暂停进服绑定拦截，控制台与 `/health` 会显示 degraded；`fail-closed` 则拒绝所有无法验证授权的玩家。
+
+普通用户执行“解绑”只删除聊天账号绑定。如果同一玩家仍有管理员通过“添加白名单”建立的直接授权，BDS 白名单会保留；只有管理员“移除白名单”会同时删除该玩家的普通绑定、管理员授权和 BDS 白名单。绑定数据以本 C++ 插件的 `player-data.json` 为唯一数据源，Koishi 不保存镜像。
 
 ---
 
@@ -278,8 +317,14 @@ python test/test_api.py --host localhost --port 60202 --player Steve
 python test/test_api.py --host localhost --port 60202 --token your-secret-token
 # 远程服务器
 python test/test_api.py --host 91.whzz.online --port 60202
+
+# 管理接口测试会修改测试玩家的绑定和 BDS 白名单，必须显式开启并使用专用玩家名
+python test/test_api.py --host localhost --port 60202 \
+  --run-admin-tests --admin-token your-admin-token --admin-player ApiTestPlayer
 ```
-测试脚本会自动依次请求所有端点并汇总测试结果。
+默认测试会检查 overview、历史分页、玩家统计等只读端点并汇总结果。命令执行与四个白名单 POST 接口只有在提供 `--run-admin-tests`、`--admin-token` 和 `--admin-player` 时才会执行。
+
+`PlayerDataStore` 的统计、分页、绑定冲突、管理员授权、XUID 回填、原子保存、备份恢复和双文件损坏由 GTest 覆盖；GitHub Actions 在构建 DLL 后自动运行 `serverinfo-rest-tests`。这些自动化测试不连接真实 BDS 或 QQ，真实服务器与机器人适配器仍需按部署环境进行端到端验收。
 
 ### ⚡ 使用 cURL
 
@@ -370,6 +415,6 @@ git push
 
 ## 🔗 相关链接
 
-- [LeviLamina](https://github.com/LiteLDev/LeviLamina) — 基岩版模组加载器
-- [mclistener-ws-server](https://github.com/VincentZyuApps/levilamina-plugin-mclistener-ws-server) — 群服互通 WebSocket 插件（同一作者）
+- [`LeviLamina`](https://github.com/LiteLDev/LeviLamina) — 基岩版模组加载器
+- [`mclistener-ws-server`](https://github.com/VincentZyuApps/levilamina-plugin-mclistener-ws-server) — 群服互通 WebSocket 插件（同一作者）
 

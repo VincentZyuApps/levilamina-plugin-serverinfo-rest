@@ -37,7 +37,11 @@ struct Config {
     // 群聊账号与 BDS 白名单绑定
     bool enableWhitelistBinding = true;
     bool enforceWhitelistBinding = true;
-    bool operatorBypassBinding = true;
+    bool operatorBypassBinding = false;
+    // player-data.json 与备份都损坏时：fail-open 暂停进服拦截，fail-closed 拒绝未能验证的玩家
+    std::string whitelistDataFailurePolicy = "fail-open";
+    // 启动时对插件记录的有效授权执行幂等 allowlist add，不删除额外的 BDS 白名单
+    bool repairMissingAllowlistEntriesOnStartup = true;
 
     // 玩家历史与统计数据保存周期
     int dataSaveIntervalSeconds = 60;

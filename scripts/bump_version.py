@@ -1,109 +1,152 @@
 #!/usr/bin/env python3
-"""
-bump_version.py — 批量更新版本号
-扫描 5 处硬编码的版本号，一键替换为新版本。
-"""
+"""Synchronize the plugin version. Usage: python scripts/bump_version.py [--dry-run] <version>."""
 
+import argparse
+import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent
+TOOTH = ROOT / "tooth.json"
+SEMVER = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 
 
-class S:
-    BOLD = "\033[1m"
-    ITALIC = "\033[3m"
-    RST = "\033[0m"
+@dataclass(frozen=True)
+class Target:
+    path: str
+    mode: str
+    required: bool = False
+    pattern: str = ""
 
 
-class C:
-    RED = "\033[31m"
-    GRN = "\033[32m"
-    YLW = "\033[33m"
-    CYN = "\033[36m"
-    GRY = "\033[90m"
-    BRED = "\033[91m"
-    BGRE = "\033[92m"
-    BYLW = "\033[93m"
-
-
-def st(text, *styles):
-    return "".join(styles) + text + S.RST
-
-
-FILES = [
-    ("tooth.json", r'"version":\s*"([^"]+)"', r'"version": "{}"'),
-    ("README.md", r'"version":\s*"([^"]+)"', r'"version": "{}"'),
-    (
+TARGETS = (
+    Target("tooth.json", "tooth", required=True),
+    Target("README.md", "exact"),
+    Target(
         "src/mod/ServerInfoRestMod.cpp",
-        r'json\["version"\]\s*=\s*"([^"]+)"',
-        r'json["version"] = "{}"',
+        "declaration",
+        required=True,
+        pattern=r'(?m)^(\s*constexpr\s+auto\s+PluginVersion\s*=\s*"){old}("\s*;.*)$',
     ),
-]
+)
 
 
-def detect() -> str:
-    m = re.search(
-        r'"version":\s*"([^"]+)"', (REPO_ROOT / "tooth.json").read_text("utf-8")
-    )
-    return m.group(1) if m else "?"
+class Style:
+    BOLD = "\033[1m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    CYAN = "\033[96m"
+    DIM = "\033[2m"
+    RESET = "\033[0m"
 
 
-def run(old: str, new: str):
-    total = 0
-    changed = 0
-    skipped = 0
-    for path, pat, tpl in FILES:
-        fp = REPO_ROOT / path
-        content = fp.read_text("utf-8")
-        new_content, n = re.subn(pat, lambda m: tpl.format(new), content)
-        if n:
-            fp.write_text(new_content, "utf-8")
-            total += n
-            changed += 1
-            icon = st("✓", C.BGRE, S.BOLD)
-            label = st("changed", C.GRN, S.ITALIC)
-            print(f"  {icon} {st(path, C.CYN, S.BOLD):44s} {label}    ({n}处)")
-        else:
-            skipped += 1
-            print(
-                f"  {st('·', C.GRY)} {st(path, C.GRY):44s} {st('unchanged', C.GRY, S.ITALIC)}"
-            )
-    return total, changed, skipped
+def read_text(path: Path) -> str:
+    with path.open("r", encoding="utf-8", newline="") as file:
+        return file.read()
 
 
-def main():
-    if len(sys.argv) != 2:
-        print(
-            f"  {st('✖', C.RED, S.BOLD)} 用法: python scripts/bump_version.py {st('<版本号>', C.CYN, S.ITALIC)}"
-        )
-        print(f"  {st('例:', C.GRY)}  python scripts/bump_version.py 1.0.1")
-        sys.exit(1)
+def write_text(path: Path, content: str) -> None:
+    with path.open("w", encoding="utf-8", newline="") as file:
+        file.write(content)
 
-    new = sys.argv[1].strip()
-    if not re.match(r"^[\d][\w.]*(?:-\w+(?:\.\w+)*)?$", new):
-        print(f"  {st('✖', C.BRED, S.BOLD)} 无效版本号: {new}")
-        sys.exit(1)
 
-    old = detect()
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Synchronize the plugin version across repository files.")
+    parser.add_argument("new_version", help="new semantic version, for example 0.2.0-alpha.1+20260718")
+    parser.add_argument("-n", "--dry-run", action="store_true", help="show changes without writing files")
+    return parser.parse_args()
+
+
+def load_old_version() -> str:
+    try:
+        data = json.loads(read_text(TOOTH))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read {TOOTH}: {error}") from error
+    version = data.get("version")
+    if not isinstance(version, str) or not version:
+        raise ValueError('tooth.json does not contain a non-empty top-level "version"')
+    return version
+
+
+def replace_target(target: Target, content: str, old: str, new: str) -> tuple[str, int]:
+    if target.mode == "exact":
+        return content.replace(old, new), content.count(old)
+    if target.mode == "tooth":
+        pattern = re.compile(rf'(?m)^(\s*"version"\s*:\s*"){re.escape(old)}("\s*,?\s*)$')
+    elif target.mode == "declaration":
+        pattern = re.compile(target.pattern.format(old=re.escape(old)))
+    else:
+        raise ValueError(f"unsupported target mode: {target.mode}")
+    return pattern.subn(lambda match: f"{match.group(1)}{new}{match.group(2)}", content)
+
+
+def plan_changes(old: str, new: str) -> tuple[list[tuple[Path, str, int]], list[str], list[str]]:
+    changes: list[tuple[Path, str, int]] = []
+    warnings: list[str] = []
+    errors: list[str] = []
+    for target in TARGETS:
+        path = ROOT / target.path
+        if not path.is_file():
+            message = f"{target.path}: file not found"
+            (errors if target.required else warnings).append(message)
+            continue
+        content = read_text(path)
+        updated, count = replace_target(target, content, old, new)
+        if count == 0:
+            message = f"{target.path}: current version {old} not found"
+            (errors if target.required else warnings).append(message)
+            continue
+        changes.append((path, updated, count))
+    return changes, warnings, errors
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        old = load_old_version()
+    except ValueError as error:
+        print(f"{Style.RED}error:{Style.RESET} {error}", file=sys.stderr)
+        return 2
+
+    new = args.new_version.strip()
+    if not SEMVER.fullmatch(new):
+        print(f"{Style.RED}error:{Style.RESET} invalid semantic version: {new}", file=sys.stderr)
+        return 2
     if old == new:
-        print(
-            f"\n  {st('🔧 Bump Version', S.BOLD)}  {st(old, C.BYLW, S.BOLD, S.ITALIC)} {st('→', C.GRY)} {st(new, C.GRN, S.BOLD, S.ITALIC)}\n"
-        )
-        print(f"  {st('版本未变化，无需更新', C.GRY, S.ITALIC)}\n")
-        return
+        print(f"{Style.YELLOW}Already at {old}; nothing to change.{Style.RESET}")
+        return 0
 
-    print(
-        f"\n  {st('🔧 Bump Version', S.BOLD)}  {st(old, C.BYLW, S.BOLD, S.ITALIC)} {st('→', C.GRY)} {st(new, C.BGRE, S.BOLD, S.ITALIC)}\n"
-    )
+    changes, warnings, errors = plan_changes(old, new)
+    print(f"\n{Style.BOLD}Version {old} -> {new}{Style.RESET}")
+    if args.dry_run:
+        print(f"{Style.CYAN}Dry run: no files will be written.{Style.RESET}")
+    print()
+    for path, _, count in changes:
+        print(f"  {Style.GREEN}{'would update' if args.dry_run else 'update'}{Style.RESET} "
+              f"{path.relative_to(ROOT)} ({count} occurrence{'s' if count != 1 else ''})")
+    for warning in warnings:
+        print(f"  {Style.YELLOW}warning:{Style.RESET} {warning}")
+    for error in errors:
+        print(f"  {Style.RED}error:{Style.RESET} {error}")
 
-    total, changed, skipped = run(old, new)
-
-    print(
-        f"\n  {st('Done.', C.GRN, S.BOLD)}  {st(f'{total} 处更新 · {changed} 文件改 · {skipped} 文件跳过', C.GRY, S.ITALIC)}\n"
-    )
+    if errors:
+        print(f"\n{Style.RED}No files were written because required targets failed validation.{Style.RESET}")
+        return 2
+    if not args.dry_run:
+        for path, content, _ in changes:
+            write_text(path, content)
+        print(f"\n{Style.GREEN}{Style.BOLD}Updated {len(changes)} files.{Style.RESET}")
+    else:
+        print(f"\n{Style.DIM}Validated {len(changes)} files; no files were written.{Style.RESET}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
