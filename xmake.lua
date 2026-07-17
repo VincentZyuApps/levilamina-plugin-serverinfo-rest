@@ -19,6 +19,7 @@ option_end()
 
 if has_config("build_tests") then
     add_requires("gtest", {configs = {main = true}})
+    add_requires("nlohmann_json")
 end
 
 if not has_config("vs_runtime") then
@@ -55,6 +56,6 @@ target("serverinfo-rest-tests")
     set_kind("binary")
     set_languages("c++20")
     add_defines("NOMINMAX", "UNICODE")
-    add_packages("gtest")
+    add_packages("gtest", "nlohmann_json")
     add_files("test/player_data_store_test.cpp", "src/mod/PlayerDataStore.cpp")
     add_includedirs("src")
