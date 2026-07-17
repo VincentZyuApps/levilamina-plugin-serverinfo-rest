@@ -18,7 +18,7 @@ option("build_tests")
 option_end()
 
 if has_config("build_tests") then
-    add_requires("gtest", {configs = {main = true}})
+    add_requires("gtest")
     add_requires("nlohmann_json")
 end
 

@@ -219,8 +219,8 @@ bool replaceFileAtomically(
                     backup.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
                 ) == 0) {
-                std::error_code cleanupError;
-                std::filesystem::remove(nextBackup, cleanupError);
+                std::error_code failedBackupCleanupError;
+                std::filesystem::remove(nextBackup, failedBackupCleanupError);
             }
             return true;
         }
