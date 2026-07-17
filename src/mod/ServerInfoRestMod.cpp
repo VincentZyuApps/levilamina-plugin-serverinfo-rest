@@ -902,11 +902,15 @@ bool ServerInfoRestMod::enable() {
             res.setJson("{\"error\": \"Whitelist binding not found\"}");
             return;
         }
+        const auto allowlistRetained = mPlayerDataStore->hasWhitelistAuthorization(binding->playerName);
         savePlayerData(true);
-        auto command = executeCommandOnServerThread("allowlist remove \"" + binding->playerName + "\"", mConfig.commandTimeoutMs);
+        auto command = allowlistRetained
+            ? CommandExecutionResult{true, false, "allowlist retained because another authorization remains"}
+            : executeCommandOnServerThread("allowlist remove \"" + binding->playerName + "\"", mConfig.commandTimeoutMs);
         nlohmann::json json;
         json["success"] = true;
         json["binding"] = bindingJson(*binding);
+        json["allowlistRetained"] = allowlistRetained;
         json["allowlistUpdated"] = command.success;
         json["commandOutput"] = truncateUtf8(
             command.output,

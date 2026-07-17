@@ -366,6 +366,16 @@ std::pair<AdminWhitelistGrant, bool> PlayerDataStore::addAdminWhitelist(
     return {grant, true};
 }
 
+bool PlayerDataStore::hasWhitelistAuthorization(const std::string& playerName) const {
+    const auto wanted = normalize(playerName);
+    std::lock_guard<std::mutex> lock(mMutex);
+    return std::ranges::any_of(mAdminWhitelist, [&](const auto& grant) {
+        return normalize(grant.playerName) == wanted;
+    }) || std::ranges::any_of(mBindings, [&](const auto& binding) {
+        return normalize(binding.playerName) == wanted;
+    });
+}
+
 bool PlayerDataStore::revokePlayerWhitelist(const std::string& playerName) {
     const auto wanted = normalize(playerName);
     std::lock_guard<std::mutex> lock(mMutex);

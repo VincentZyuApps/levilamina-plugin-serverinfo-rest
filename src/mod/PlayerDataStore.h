@@ -92,6 +92,7 @@ public:
         const std::string& addedBy,
         std::int64_t nowMs
     );
+    bool hasWhitelistAuthorization(const std::string& playerName) const;
     bool revokePlayerWhitelist(const std::string& playerName);
     bool authorizePlayer(
         const std::string& playerName,
