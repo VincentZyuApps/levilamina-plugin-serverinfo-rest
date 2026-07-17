@@ -101,18 +101,21 @@ jobs:
           path: |
             ${{ runner.temp }}/.xmake/packages
             ~/AppData/Local/.xmake/packages
-          key: ${{ runner.os }}-xmake-${{ hashFiles('xmake.lua') }}
+          key: ${{ runner.os }}-xmake-source-v1-${{ hashFiles('xmake.lua') }}
           restore-keys: |
-            ${{ runner.os }}-xmake-
+            ${{ runner.os }}-xmake-source-v1-
 
       - name: Update xmake repositories
         run: xmake repo -u
+
+      - name: Disable precompiled xmake packages
+        run: xmake g --policies=package.precompiled:n
 
       - name: Configure
         run: xmake f -vD -y -p windows -a x64 -m release
 
       - name: Build
-        run: xmake
+        run: xmake -vD
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
