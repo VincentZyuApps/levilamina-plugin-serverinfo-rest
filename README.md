@@ -169,7 +169,7 @@ GET /
 ```json
 {
     "name": "serverinfo-rest",
-    "version": "0.2.2-alpha.4+20260720",
+    "version": "0.2.2-alpha.5",
     "description": "REST API for Minecraft Bedrock Server information",
     "endpoints": {
         "GET /api/v1/status": "Server status overview",
@@ -207,7 +207,7 @@ GET /api/v1/status
 {
     "status": "online",
     "plugin": "serverinfo-rest",
-    "version": "0.2.2-alpha.4+20260720",
+    "version": "0.2.2-alpha.5",
     "playerCount": 5
 }
 ```

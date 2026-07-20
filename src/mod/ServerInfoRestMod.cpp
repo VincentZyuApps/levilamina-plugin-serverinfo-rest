@@ -34,7 +34,7 @@
 namespace serverinfo_rest {
 
 namespace {
-constexpr auto PluginVersion = "0.2.2-alpha.4+20260720";
+constexpr auto PluginVersion = "0.2.2-alpha.5";
 
 int hexValue(char ch) {
     if (ch >= '0' && ch <= '9') return ch - '0';
