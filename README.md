@@ -79,7 +79,7 @@ BDS服务端/
 
 ```json
 {
-    "version": 4,
+    "version": 5,
     "_comment_logLevel": "📝🔍 日志级别：silent | fatal | error | warn | info | debug | trace",
     "logLevel": "info",
     "_comment_host": "🌐🖥️ HTTP 监听地址：0.0.0.0 表示允许其他设备访问，127.0.0.1 表示仅本机访问",
@@ -108,12 +108,14 @@ BDS服务端/
     "commandTimeoutMs": 5000,
     "_comment_commandOutputLimit": "📏📤 BDS 命令返回文本最大长度",
     "commandOutputLimit": 4000,
-    "_comment_enableWhitelistBinding": "🔗✅ 是否开放聊天账号绑定与解绑白名单接口",
-    "enableWhitelistBinding": true,
-    "_comment_enforceWhitelistBinding": "🚪🛡️ 是否拒绝没有普通绑定或管理员直接授权的玩家进服",
-    "enforceWhitelistBinding": true,
-    "_comment_operatorBypassBinding": "👑🚪 OP 是否跳过绑定检查；false 表示 OP 也必须获得授权",
-    "operatorBypassBinding": false,
+    "_comment_enableWhitelistBindingApiEndpoints": "🔗🌐 是否开放普通用户绑定与解绑白名单接口",
+    "enableWhitelistBindingApiEndpoints": true,
+    "_comment_enableWhitelistManagementApiEndpoints": "🛡️🌐 是否开放管理员添加与移除白名单接口",
+    "enableWhitelistManagementApiEndpoints": true,
+    "_comment_requireWhitelistAuthorizationOnJoin": "🚪🛡️ 玩家进服时是否要求已有普通绑定或管理员直接授权",
+    "requireWhitelistAuthorizationOnJoin": true,
+    "_comment_operatorBypassesWhitelistAuthorization": "👑🚪 OP 是否跳过进服授权检查；false 表示 OP 也必须获得授权",
+    "operatorBypassesWhitelistAuthorization": false,
     "_comment_whitelistDataFailurePolicy": "💾⚠️ 玩家数据与备份都损坏时的策略：fail-open 暂停拦截 | fail-closed 拒绝无法验证的玩家",
     "whitelistDataFailurePolicy": "fail-open",
     "_comment_repairMissingAllowlistEntriesOnStartup": "🛠️📋 启动时补齐插件记录中缺失的 BDS 白名单，不会删除 BDS 中的额外白名单",
@@ -127,11 +129,13 @@ BDS服务端/
 
 保持 `enableToken=false` 时，只读查询不需要配置 `token`。若需要调用绑定、解绑、添加或移除白名单接口，只需在服务端和客户端填写同一个非空 `adminToken`；远程命令可继续保持 `enableCommandExecution=false`。
 
+从 v4 升级时，插件会自动将 `enableWhitelistBinding`、`enforceWhitelistBinding` 和 `operatorBypassBinding` 迁移为对应的新字段，并保留原有布尔值。新增的 `enableWhitelistManagementApiEndpoints` 默认为 `true`，以保持旧版本中管理员添加与移除接口始终可用的行为。迁移完成后配置文件会以 `version=5` 重写，其他配置不会改变。
+
 ### 配置项说明
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `version` | int | `4` | 配置文件版本 |
+| `version` | int | `5` | 配置文件版本 |
 | `logLevel` | string | `"info"` | 日志级别 |
 | `host` | string | `"0.0.0.0"` | HTTP 服务器监听地址 |
 | `port` | int | `60202` | HTTP 服务器监听端口 |
@@ -146,9 +150,10 @@ BDS服务端/
 | `commandAllowPrefixes` | string[] | `[]` | 允许的命令前缀；空数组表示不额外限制 |
 | `commandTimeoutMs` | int | `5000` | 主线程命令执行等待上限，范围由插件约束 |
 | `commandOutputLimit` | int | `4000` | 命令返回文本最大长度 |
-| `enableWhitelistBinding` | bool | `true` | 是否开放聊天账号绑定与解绑接口 |
-| `enforceWhitelistBinding` | bool | `true` | 是否拒绝没有普通绑定或管理员直接授权的玩家 |
-| `operatorBypassBinding` | bool | `false` | OP 是否跳过绑定检查；默认关闭，确保所有玩家遵守同一规则 |
+| `enableWhitelistBindingApiEndpoints` | bool | `true` | 是否开放普通用户绑定与解绑接口 |
+| `enableWhitelistManagementApiEndpoints` | bool | `true` | 是否开放管理员添加与移除白名单接口 |
+| `requireWhitelistAuthorizationOnJoin` | bool | `true` | 玩家进服时是否要求已有普通绑定或管理员直接授权 |
+| `operatorBypassesWhitelistAuthorization` | bool | `false` | OP 是否跳过进服授权检查；默认关闭，确保所有玩家遵守同一规则 |
 | `whitelistDataFailurePolicy` | string | `"fail-open"` | 数据文件与备份都损坏时使用 `fail-open` 暂停拦截，或 `fail-closed` 拒绝无法验证的玩家 |
 | `repairMissingAllowlistEntriesOnStartup` | bool | `true` | 启动时对插件记录的有效授权执行幂等 `allowlist add`；不会删除 BDS 的额外白名单 |
 | `dataSaveIntervalSeconds` | int | `60` | 玩家历史与统计数据保存周期 |
@@ -194,6 +199,8 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/
 每次保存先写入 `player-data.json.tmp`，重新解析校验成功后才原子替换正式文件。正式文件损坏时会自动尝试备份；正式文件与备份都损坏时，历史、统计及白名单写接口返回 `503`，并且插件绝不会用空数据覆盖损坏文件。
 
 `whitelistDataFailurePolicy=fail-open` 仅在数据不可用时临时暂停进服绑定拦截，控制台与 `/health` 会显示 degraded；`fail-closed` 则拒绝所有无法验证授权的玩家。
+
+四个白名单开关彼此独立：`enableWhitelistBindingApiEndpoints` 控制普通用户 bind/unbind，`enableWhitelistManagementApiEndpoints` 控制管理员 add/remove，`requireWhitelistAuthorizationOnJoin` 控制玩家进服拦截，`operatorBypassesWhitelistAuthorization` 只在进服授权检查启用时生效。若白天只想测试 API 而不影响玩家进服，可以保持两个接口开关为 `true`，并将 `requireWhitelistAuthorizationOnJoin` 设为 `false`。
 
 普通用户执行“解绑”只删除聊天账号绑定。如果同一玩家仍有管理员通过“添加白名单”建立的直接授权，BDS 白名单会保留；只有管理员“移除白名单”会同时删除该玩家的普通绑定、管理员授权和 BDS 白名单。绑定数据以本插件的 `player-data.json` 为唯一数据源。
 

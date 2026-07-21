@@ -1,4 +1,5 @@
 #include "mod/ServerInfoRestMod.h"
+#include "mod/ConfigMigration.h"
 #include "mod/ExecCommandNative.h"
 #include "mod/HttpServer.h"
 #include "mod/PlayerDataStore.h"
@@ -35,7 +36,7 @@
 namespace serverinfo_rest {
 
 namespace {
-constexpr auto PluginVersion = "0.2.7-alpha.15";
+constexpr auto PluginVersion = "0.2.8-alpha.16";
 
 int hexValue(char ch) {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -384,8 +385,19 @@ bool ServerInfoRestMod::load() {
 
     // 读取配置文件
     const auto& configFilePath = getSelf().getConfigDir() / "config.json";
-    if (!ll::config::loadConfig(mConfig, configFilePath)) {
+    bool migratedLegacyConfig = false;
+    if (!ll::config::loadConfig(
+            mConfig,
+            configFilePath,
+            [&migratedLegacyConfig](Config& config, nlohmann::ordered_json& data) {
+                migratedLegacyConfig = migrateConfigV4ToV5(data);
+                return ll::config::defaultConfigUpdater(config, data);
+            }
+        )) {
         logger.info("Configuration is new or requires migration: {}", configFilePath.string());
+        if (migratedLegacyConfig) {
+            logger.info("Migrated whitelist configuration from v4 to v5");
+        }
         logger.info("Saving normalized configurations...");
         if (!ll::config::saveConfig(mConfig, configFilePath)) {
             logger.error("Failed to save default configurations!");
@@ -447,9 +459,13 @@ bool ServerInfoRestMod::load() {
     logger.debug("  - tokenReceiveMode: {}", mConfig.tokenReceiveMode);
     logger.debug("  - adminTokenReceiveMode: {}", mConfig.adminTokenReceiveMode);
     logger.debug("  - enableCommandExecution: {}", mConfig.enableCommandExecution);
-    logger.debug("  - enableWhitelistBinding: {}", mConfig.enableWhitelistBinding);
-    logger.debug("  - enforceWhitelistBinding: {}", mConfig.enforceWhitelistBinding);
-    logger.debug("  - operatorBypassBinding: {}", mConfig.operatorBypassBinding);
+    logger.debug("  - enableWhitelistBindingApiEndpoints: {}", mConfig.enableWhitelistBindingApiEndpoints);
+    logger.debug("  - enableWhitelistManagementApiEndpoints: {}", mConfig.enableWhitelistManagementApiEndpoints);
+    logger.debug("  - requireWhitelistAuthorizationOnJoin: {}", mConfig.requireWhitelistAuthorizationOnJoin);
+    logger.debug(
+        "  - operatorBypassesWhitelistAuthorization: {}",
+        mConfig.operatorBypassesWhitelistAuthorization
+    );
     logger.debug("  - whitelistDataFailurePolicy: {}", mConfig.whitelistDataFailurePolicy);
     logger.debug("  - repairMissingAllowlistEntriesOnStartup: {}", mConfig.repairMissingAllowlistEntriesOnStartup);
     if (mConfig.enableToken) {
@@ -501,7 +517,7 @@ bool ServerInfoRestMod::enable() {
 
     mPlayerConnectListener = eventBus.emplaceListener<ll::event::player::PlayerConnectEvent>(
         [this](ll::event::player::PlayerConnectEvent& event) {
-            if (!mConfig.enforceWhitelistBinding) return;
+            if (!mConfig.requireWhitelistAuthorizationOnJoin) return;
             if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
                 if (isFailOpenPolicy(mConfig.whitelistDataFailurePolicy)) return;
                 auto& player = event.self();
@@ -518,7 +534,7 @@ bool ServerInfoRestMod::enable() {
                     player.getRealName(),
                     player.getXuid(),
                     player.isOperator(),
-                    mConfig.operatorBypassBinding
+                    mConfig.operatorBypassesWhitelistAuthorization
                 )) {
                 return;
             }
@@ -918,9 +934,9 @@ bool ServerInfoRestMod::enable() {
         HttpResponse& res
     ) {
         if (!validateAdminToken(req, res)) return;
-        if (!mConfig.enableWhitelistBinding) {
+        if (!mConfig.enableWhitelistBindingApiEndpoints) {
             res.setStatus(403, "Forbidden");
-            res.setJson("{\"error\": \"Whitelist binding is disabled\"}");
+            res.setJson("{\"error\": \"Whitelist binding API endpoints are disabled\"}");
             return;
         }
         if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
@@ -985,9 +1001,9 @@ bool ServerInfoRestMod::enable() {
         HttpResponse& res
     ) {
         if (!validateAdminToken(req, res)) return;
-        if (!mConfig.enableWhitelistBinding) {
+        if (!mConfig.enableWhitelistBindingApiEndpoints) {
             res.setStatus(403, "Forbidden");
-            res.setJson("{\"error\": \"Whitelist binding is disabled\"}");
+            res.setJson("{\"error\": \"Whitelist binding API endpoints are disabled\"}");
             return;
         }
         if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
@@ -1041,6 +1057,11 @@ bool ServerInfoRestMod::enable() {
         HttpResponse& res
     ) {
         if (!validateAdminToken(req, res)) return;
+        if (!mConfig.enableWhitelistManagementApiEndpoints) {
+            res.setStatus(403, "Forbidden");
+            res.setJson("{\"error\": \"Whitelist management API endpoints are disabled\"}");
+            return;
+        }
         if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Player data store is unavailable\"}");
@@ -1086,6 +1107,11 @@ bool ServerInfoRestMod::enable() {
         HttpResponse& res
     ) {
         if (!validateAdminToken(req, res)) return;
+        if (!mConfig.enableWhitelistManagementApiEndpoints) {
+            res.setStatus(403, "Forbidden");
+            res.setJson("{\"error\": \"Whitelist management API endpoints are disabled\"}");
+            return;
+        }
         if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Player data store is unavailable\"}");

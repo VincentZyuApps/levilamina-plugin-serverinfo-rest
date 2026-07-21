@@ -6,7 +6,7 @@
 namespace serverinfo_rest {
 
 struct Config {
-    int version = 4;
+    int version = 5;
 
     std::string _comment_logLevel = "📝🔍 日志级别：silent | fatal | error | warn | info | debug | trace";
     std::string logLevel = "info";
@@ -52,14 +52,19 @@ struct Config {
     std::string _comment_commandOutputLimit = "📏📤 BDS 命令返回文本最大长度";
     int commandOutputLimit = 4000;
 
-    std::string _comment_enableWhitelistBinding = "🔗✅ 是否开放聊天账号绑定与解绑白名单接口";
-    bool enableWhitelistBinding = true;
+    std::string _comment_enableWhitelistBindingApiEndpoints = "🔗🌐 是否开放普通用户绑定与解绑白名单接口";
+    bool enableWhitelistBindingApiEndpoints = true;
 
-    std::string _comment_enforceWhitelistBinding = "🚪🛡️ 是否拒绝没有普通绑定或管理员直接授权的玩家进服";
-    bool enforceWhitelistBinding = true;
+    std::string _comment_enableWhitelistManagementApiEndpoints = "🛡️🌐 是否开放管理员添加与移除白名单接口";
+    bool enableWhitelistManagementApiEndpoints = true;
 
-    std::string _comment_operatorBypassBinding = "👑🚪 OP 是否跳过绑定检查；false 表示 OP 也必须获得授权";
-    bool operatorBypassBinding = false;
+    std::string _comment_requireWhitelistAuthorizationOnJoin =
+        "🚪🛡️ 玩家进服时是否要求已有普通绑定或管理员直接授权";
+    bool requireWhitelistAuthorizationOnJoin = true;
+
+    std::string _comment_operatorBypassesWhitelistAuthorization =
+        "👑🚪 OP 是否跳过进服授权检查；false 表示 OP 也必须获得授权";
+    bool operatorBypassesWhitelistAuthorization = false;
 
     std::string _comment_whitelistDataFailurePolicy =
         "💾⚠️ 玩家数据与备份都损坏时的策略：fail-open 暂停拦截 | fail-closed 拒绝无法验证的玩家";
