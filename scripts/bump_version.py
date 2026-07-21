@@ -59,7 +59,14 @@ def write_text(path: Path, content: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Synchronize the plugin version across repository files.")
     parser.add_argument("new_version", help="new semantic version, for example X.Y.Z-beta.W+YYYYMMDD")
-    parser.add_argument("-n", "--dry-run", action="store_true", help="show changes without writing files")
+    parser.add_argument(
+        "-d",
+        "--dryrun",
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="show changes without writing files",
+    )
     return parser.parse_args()
 
 
