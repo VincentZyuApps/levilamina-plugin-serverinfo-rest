@@ -6,6 +6,8 @@
 
 > 🌐 A REST API plugin for LeviLamina Server(Minecraft Bedrock Edition) that provides HTTP interfaces to query server status and player information.
 
+> 已有现成的 Koishi 客户端：[![Koishi Plugin](https://img.shields.io/badge/Koishi-Plugin-6c5cb5?style=flat-square&logo=typescript&logoColor=white&labelColor=5546a3)](https://github.com/VincentZyuApps/koishi-plugin-serverinfo-rest-client) [`koishi-plugin-ll-serverinfo-rest-client`](https://github.com/VincentZyuApps/koishi-plugin-serverinfo-rest-client)，可在聊天平台查询服务器状态、玩家数据并管理白名单。
+
 [![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest)
 [![Gitee](https://img.shields.io/badge/Gitee-C71D23?style=for-the-badge&logo=gitee&logoColor=white)](https://gitee.com/vincent-zyu/levilamina-plugin-serverinfo-rest)
 
