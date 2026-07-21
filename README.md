@@ -23,7 +23,13 @@
 
 [![RELEASE](https://img.shields.io/static/v1?label=RELEASE&message=WINDOWS-x64&color=0078D4&style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6TTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgweiBNMTIuNjIzIDEyLjYyM0gyNFYyNEgxMi42MjN6IiBmaWxsPSIjZmZmIi8+PC9zdmc+)](https://github.com/VincentZyuApps/levilamina-plugin-serverinfo-rest/releases)
 
-[![QQ群](https://img.shields.io/badge/QQ群-1085190201-12B7F5?style=flat-square&logo=qq&logoColor=white)](https://qm.qq.com/q/4vjto4V7Di)
+[![QQ群](https://img.shields.io/badge/QQ群-1085190201-12B7F5?style=flat-square&logo=qq&logoColor=white)](https://qm.qq.com/q/ZN7fxZ3qCq)
+
+<h2>💬 交流反馈</h2>
+<p>🐛 Bug 反馈 / 💡 建议 / 👨‍💻 插件开发交流，欢迎加群：</p>
+<p><del>💬 插件使用问题 / 🐛 Bug反馈 / 👨‍💻 插件开发交流，欢迎加入QQ群：<b>259248174</b>   🎉（这个群G了）</del></p>
+<p>💬 插件使用问题 / 🐛 Bug反馈 / 👨‍💻 插件开发交流，欢迎加入QQ群：<b>1085190201</b> 🎉</p>
+<p>💡 在群里直接艾特我，回复的更快哦~ ✨</p>
 
 ```shell
                                    _       ____                           __
@@ -73,42 +79,46 @@ BDS服务端/
 
 ```json
 {
-    "version": 3,
-    "_comment_logLevel": "日志级别：silent | fatal | error | warn | info | debug | trace",
+    "version": 4,
+    "_comment_logLevel": "📝🔍 日志级别：silent | fatal | error | warn | info | debug | trace",
     "logLevel": "info",
-    "_comment_host": "HTTP 监听地址：0.0.0.0 表示允许其他设备访问，127.0.0.1 表示仅本机访问",
+    "_comment_host": "🌐🖥️ HTTP 监听地址：0.0.0.0 表示允许其他设备访问，127.0.0.1 表示仅本机访问",
     "host": "0.0.0.0",
-    "_comment_port": "HTTP 监听端口，修改后需要同步更新客户端连接地址",
+    "_comment_port": "🔌🌐 HTTP 监听端口，修改后需要同步更新客户端连接地址",
     "port": 60202,
-    "_comment_enableCors": "是否返回 CORS 响应头；浏览器跨域访问时需要启用",
+    "_comment_enableCors": "🌍🔓 是否返回 CORS 响应头；浏览器跨域访问时需要启用",
     "enableCors": true,
-    "_comment_apiPrefix": "API 路径前缀，客户端必须配置为相同值",
+    "_comment_apiPrefix": "📡🛣️ API 路径前缀，客户端必须配置为相同值",
     "apiPrefix": "/api/v1",
-    "_comment_enableToken": "是否要求只读查询接口验证 token；健康检查接口始终无需 token",
+    "_comment_enableToken": "🔐👀 是否要求只读查询接口验证 token；健康检查接口始终无需 token",
     "enableToken": false,
-    "_comment_token": "只读查询令牌；enableToken=false 时可以留空，建议通过 Authorization Bearer 传递",
+    "_comment_token": "🔑📖 只读查询令牌；enableToken=false 时可以留空，禁止与 adminToken 相同",
     "token": "",
-    "_comment_adminToken": "管理令牌；绑定、解绑、添加、移除白名单时必须填写，禁止与只读 token 相同",
+    "_comment_tokenReceiveMode": "📥🔑 只读 token 接收方式：param | header | both；param 使用 URL query 参数 ?token=...",
+    "tokenReceiveMode": "both",
+    "_comment_adminToken": "🛡️🔑 管理令牌；绑定、解绑、添加、移除白名单时必须填写，禁止与只读 token 相同",
     "adminToken": "",
-    "_comment_enableCommandExecution": "是否开放远程 BDS 命令接口；白名单接口不受此开关影响",
+    "_comment_adminTokenReceiveMode": "📥🛡️ 管理 token 接收方式：param | header | both；默认 header，避免高权限令牌进入 URL",
+    "adminTokenReceiveMode": "header",
+    "_comment_enableCommandExecution": "⚡🖥️ 是否开放远程 BDS 命令接口；白名单接口不受此开关影响",
     "enableCommandExecution": false,
-    "_comment_commandAllowPrefixes": "远程命令允许前缀；空数组表示不额外限制，仅在命令接口启用时生效",
+    "_comment_commandAllowPrefixes": "📋🛡️ 远程命令允许前缀；空数组表示不额外限制，仅在命令接口启用时生效",
     "commandAllowPrefixes": [],
-    "_comment_commandTimeoutMs": "BDS 命令执行等待上限，单位毫秒",
+    "_comment_commandTimeoutMs": "⏱️⚙️ BDS 命令执行等待上限，单位毫秒",
     "commandTimeoutMs": 5000,
-    "_comment_commandOutputLimit": "BDS 命令返回文本最大长度",
+    "_comment_commandOutputLimit": "📏📤 BDS 命令返回文本最大长度",
     "commandOutputLimit": 4000,
-    "_comment_enableWhitelistBinding": "是否开放聊天账号绑定与解绑白名单接口",
+    "_comment_enableWhitelistBinding": "🔗✅ 是否开放聊天账号绑定与解绑白名单接口",
     "enableWhitelistBinding": true,
-    "_comment_enforceWhitelistBinding": "是否拒绝没有普通绑定或管理员直接授权的玩家进服",
+    "_comment_enforceWhitelistBinding": "🚪🛡️ 是否拒绝没有普通绑定或管理员直接授权的玩家进服",
     "enforceWhitelistBinding": true,
-    "_comment_operatorBypassBinding": "OP 是否跳过绑定检查；false 表示 OP 也必须获得授权",
+    "_comment_operatorBypassBinding": "👑🚪 OP 是否跳过绑定检查；false 表示 OP 也必须获得授权",
     "operatorBypassBinding": false,
-    "_comment_whitelistDataFailurePolicy": "玩家数据与备份都损坏时的策略：fail-open 暂停拦截 | fail-closed 拒绝无法验证的玩家",
+    "_comment_whitelistDataFailurePolicy": "💾⚠️ 玩家数据与备份都损坏时的策略：fail-open 暂停拦截 | fail-closed 拒绝无法验证的玩家",
     "whitelistDataFailurePolicy": "fail-open",
-    "_comment_repairMissingAllowlistEntriesOnStartup": "启动时补齐插件记录中缺失的 BDS 白名单，不会删除 BDS 中的额外白名单",
+    "_comment_repairMissingAllowlistEntriesOnStartup": "🛠️📋 启动时补齐插件记录中缺失的 BDS 白名单，不会删除 BDS 中的额外白名单",
     "repairMissingAllowlistEntriesOnStartup": true,
-    "_comment_dataSaveIntervalSeconds": "玩家历史与统计数据自动保存周期，单位秒",
+    "_comment_dataSaveIntervalSeconds": "💾⏱️ 玩家历史与统计数据自动保存周期，单位秒",
     "dataSaveIntervalSeconds": 60
 }
 ```
@@ -121,7 +131,7 @@ BDS服务端/
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `version` | int | `3` | 配置文件版本 |
+| `version` | int | `4` | 配置文件版本 |
 | `logLevel` | string | `"info"` | 日志级别 |
 | `host` | string | `"0.0.0.0"` | HTTP 服务器监听地址 |
 | `port` | int | `60202` | HTTP 服务器监听端口 |
@@ -129,7 +139,9 @@ BDS服务端/
 | `apiPrefix` | string | `"/api/v1"` | API 路径前缀 |
 | `enableToken` | bool | `false` | 是否启用 Token 认证 |
 | `token` | string | `""` | 访问令牌 |
+| `tokenReceiveMode` | string | `"both"` | 只读 token 接收方式：`param`、`header` 或 `both` |
 | `adminToken` | string | `""` | 命令与白名单写接口使用的独立管理令牌，不能复用只读 Token |
+| `adminTokenReceiveMode` | string | `"header"` | 管理 token 接收方式：`param`、`header` 或 `both` |
 | `enableCommandExecution` | bool | `false` | 是否开放远程命令接口 |
 | `commandAllowPrefixes` | string[] | `[]` | 允许的命令前缀；空数组表示不额外限制 |
 | `commandTimeoutMs` | int | `5000` | 主线程命令执行等待上限，范围由插件约束 |
@@ -143,24 +155,33 @@ BDS服务端/
 
 ### Token 认证
 
-启用 Token 认证后，所有 API 请求（除了 `/api/v1/health`）都需要在 URL 中附带 `token` 参数：
+启用 Token 认证后，所有只读 API 请求（除了 `/api/v1/health`）都必须按 `tokenReceiveMode` 携带 token：
 
 ```bash
 # 未启用 Token
 curl http://localhost:60202/api/v1/players
 
-# 启用 Token 后
+# param：通过 URL query 参数发送
 curl "http://localhost:60202/api/v1/players?token=your-secret-token"
 
-# 查询玩家时带 Token
-curl "http://localhost:60202/api/v1/player?name=Steve&token=your-secret-token"
+# header：通过 Authorization Bearer 请求头发送
+curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/players
+
+# both：以上两种形式均可；同时提供时两个 token 必须一致
 ```
 
+| 模式 | 服务端接受的形式 |
+| --- | --- |
+| `param` | 仅接受 URL query 参数 `?token=...` |
+| `header` | 仅接受 `Authorization: Bearer ...` 请求头 |
+| `both` | 两种形式均接受；同时提供但内容不一致时拒绝请求 |
+
 **错误响应**：
-- `401 Unauthorized` — 缺少 token：`{"error": "Missing token parameter"}`
+- `400 Bad Request` — `both` 模式收到两个不同 token：`{"error": "Conflicting access token sources"}`
+- `401 Unauthorized` — 缺少 token：`{"error": "Missing access token"}`
 - `403 Forbidden` — token 错误：`{"error": "Invalid token"}`
 
-管理接口只接受 `Authorization: Bearer <adminToken>`，不接受 query token。只读接口推荐同样使用 Bearer Token，URL query 参数仅为兼容旧客户端保留。
+管理接口按 `adminTokenReceiveMode` 使用相同的三种接收规则，默认值为 `header`。`param` 和 `both` 会让 token 出现在 URL 中；虽然插件日志会将 `token` 遮盖为 `***`，反向代理、浏览器或其他客户端仍可能记录完整 URL，因此公网环境推荐使用 HTTPS 和 `header`。
 
 ### 玩家数据与白名单所有权
 

@@ -2,6 +2,7 @@
 #include "mod/ExecCommandNative.h"
 #include "mod/HttpServer.h"
 #include "mod/PlayerDataStore.h"
+#include "mod/TokenAuth.h"
 
 #include "ll/api/mod/RegisterHelper.h"
 #include "ll/api/Config.h"
@@ -34,7 +35,7 @@
 namespace serverinfo_rest {
 
 namespace {
-constexpr auto PluginVersion = "0.2.6-alpha.14";
+constexpr auto PluginVersion = "0.2.7-alpha.15";
 
 int hexValue(char ch) {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -98,7 +99,7 @@ long long unixTimeMs() {
     ).count();
 }
 
-std::string getBearerToken(const HttpRequest& request, bool allowQueryToken) {
+std::string getBearerHeaderToken(const HttpRequest& request) {
     auto authorization = getHeaderCaseInsensitive(request, "authorization");
     constexpr std::string_view prefix = "Bearer ";
     if (authorization.size() >= prefix.size()
@@ -107,18 +108,7 @@ std::string getBearerToken(const HttpRequest& request, bool allowQueryToken) {
         })) {
         return authorization.substr(prefix.size());
     }
-    return allowQueryToken ? getQueryParam(request.query, "token") : std::string{};
-}
-
-bool secureEquals(std::string_view left, std::string_view right) {
-    std::size_t difference = left.size() ^ right.size();
-    const auto count = std::max(left.size(), right.size());
-    for (std::size_t i = 0; i < count; ++i) {
-        const auto lhs = i < left.size() ? static_cast<unsigned char>(left[i]) : 0;
-        const auto rhs = i < right.size() ? static_cast<unsigned char>(right[i]) : 0;
-        difference |= lhs ^ rhs;
-    }
-    return difference == 0;
+    return {};
 }
 
 int parseBoundedInt(const std::string& value, int fallback, int minimum, int maximum) {
@@ -401,6 +391,26 @@ bool ServerInfoRestMod::load() {
             logger.error("Failed to save default configurations!");
         }
     }
+    auto normalizeTokenMode = [&logger](
+                                  std::string& configured,
+                                  TokenReceiveMode fallback,
+                                  std::string_view fieldName
+                              ) {
+        const auto parsed = parseTokenReceiveMode(configured);
+        if (!parsed) {
+            logger.warn(
+                "Unknown {} '{}'; falling back to {}",
+                fieldName,
+                configured,
+                tokenReceiveModeName(fallback)
+            );
+            configured = std::string(tokenReceiveModeName(fallback));
+            return;
+        }
+        configured = std::string(tokenReceiveModeName(*parsed));
+    };
+    normalizeTokenMode(mConfig.tokenReceiveMode, TokenReceiveMode::Header, "tokenReceiveMode");
+    normalizeTokenMode(mConfig.adminTokenReceiveMode, TokenReceiveMode::Header, "adminTokenReceiveMode");
     if (!isFailOpenPolicy(mConfig.whitelistDataFailurePolicy)
         && !isFailClosedPolicy(mConfig.whitelistDataFailurePolicy)) {
         logger.warn(
@@ -434,6 +444,8 @@ bool ServerInfoRestMod::load() {
     logger.debug("  - enableCors: {}", mConfig.enableCors);
     logger.debug("  - apiPrefix: {}", mConfig.apiPrefix);
     logger.debug("  - enableToken: {}", mConfig.enableToken);
+    logger.debug("  - tokenReceiveMode: {}", mConfig.tokenReceiveMode);
+    logger.debug("  - adminTokenReceiveMode: {}", mConfig.adminTokenReceiveMode);
     logger.debug("  - enableCommandExecution: {}", mConfig.enableCommandExecution);
     logger.debug("  - enableWhitelistBinding: {}", mConfig.enableWhitelistBinding);
     logger.debug("  - enforceWhitelistBinding: {}", mConfig.enforceWhitelistBinding);
@@ -445,6 +457,12 @@ bool ServerInfoRestMod::load() {
         if (mConfig.token.empty()) {
             logger.warn("Token is empty! Please set a token in config.json");
         }
+    }
+    if (mConfig.adminTokenReceiveMode != "header") {
+        logger.warn(
+            "Admin token URL parameters are enabled via adminTokenReceiveMode={}; URLs may be recorded by proxies or clients",
+            mConfig.adminTokenReceiveMode
+        );
     }
 
     logger.info("serverinfo-rest loaded successfully!");
@@ -593,18 +611,32 @@ bool ServerInfoRestMod::enable() {
     }
 
     std::string prefix = mConfig.apiPrefix;
+    const auto tokenReceiveMode =
+        parseTokenReceiveMode(mConfig.tokenReceiveMode).value_or(TokenReceiveMode::Header);
+    const auto adminTokenReceiveMode =
+        parseTokenReceiveMode(mConfig.adminTokenReceiveMode).value_or(TokenReceiveMode::Header);
 
     // Token 验证辅助函数
-    auto validateToken = [this](const HttpRequest& req, HttpResponse& res) -> bool {
+    auto validateToken = [this, tokenReceiveMode](const HttpRequest& req, HttpResponse& res) -> bool {
         if (!mConfig.enableToken) return true;
-        auto reqToken = getBearerToken(req, true);
-        if (reqToken.empty()) {
+        auto selection = selectToken(
+            getBearerHeaderToken(req),
+            getQueryParam(req.query, "token"),
+            tokenReceiveMode
+        );
+        if (selection.conflict) {
+            res.setStatus(400, "Bad Request");
+            res.setJson("{\"error\": \"Conflicting access token sources\"}");
+            getSelf().getLogger().debug("Request rejected: conflicting token sources");
+            return false;
+        }
+        if (selection.token.empty()) {
             res.setStatus(401, "Unauthorized");
             res.setJson("{\"error\": \"Missing access token\"}");
             getSelf().getLogger().debug("Request rejected: missing token");
             return false;
         }
-        if (!secureEquals(reqToken, mConfig.token)) {
+        if (!secureEquals(selection.token, mConfig.token)) {
             res.setStatus(403, "Forbidden");
             res.setJson("{\"error\": \"Invalid token\"}");
             getSelf().getLogger().debug("Request rejected: invalid token");
@@ -614,19 +646,28 @@ bool ServerInfoRestMod::enable() {
         return true;
     };
 
-    auto validateAdminToken = [this](const HttpRequest& req, HttpResponse& res) -> bool {
+    auto validateAdminToken = [this, adminTokenReceiveMode](const HttpRequest& req, HttpResponse& res) -> bool {
         if (mConfig.adminToken.empty()) {
             res.setStatus(503, "Service Unavailable");
             res.setJson("{\"error\": \"Admin API token is not configured\"}");
             return false;
         }
-        auto reqToken = getBearerToken(req, false);
-        if (reqToken.empty()) {
+        auto selection = selectToken(
+            getBearerHeaderToken(req),
+            getQueryParam(req.query, "token"),
+            adminTokenReceiveMode
+        );
+        if (selection.conflict) {
+            res.setStatus(400, "Bad Request");
+            res.setJson("{\"error\": \"Conflicting admin token sources\"}");
+            return false;
+        }
+        if (selection.token.empty()) {
             res.setStatus(401, "Unauthorized");
             res.setJson("{\"error\": \"Missing admin access token\"}");
             return false;
         }
-        if (!secureEquals(reqToken, mConfig.adminToken)) {
+        if (!secureEquals(selection.token, mConfig.adminToken)) {
             res.setStatus(403, "Forbidden");
             res.setJson("{\"error\": \"Invalid admin token\"}");
             return false;
