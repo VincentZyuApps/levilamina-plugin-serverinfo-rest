@@ -27,7 +27,6 @@ class Target:
 
 TARGETS = (
     Target("tooth.json", "tooth", required=True),
-    Target("README.md", "exact"),
     Target(
         "src/mod/ServerInfoRestMod.cpp",
         "declaration",
@@ -59,7 +58,7 @@ def write_text(path: Path, content: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Synchronize the plugin version across repository files.")
-    parser.add_argument("new_version", help="new semantic version, for example 0.2.0-alpha.1+20260718")
+    parser.add_argument("new_version", help="new semantic version, for example X.Y.Z-beta.W+YYYYMMDD")
     parser.add_argument("-n", "--dry-run", action="store_true", help="show changes without writing files")
     return parser.parse_args()
 
@@ -76,8 +75,6 @@ def load_old_version() -> str:
 
 
 def replace_target(target: Target, content: str, old: str, new: str) -> tuple[str, int]:
-    if target.mode == "exact":
-        return content.replace(old, new), content.count(old)
     if target.mode == "tooth":
         pattern = re.compile(rf'(?m)^(\s*"version"\s*:\s*"){re.escape(old)}("\s*,?\s*)$')
     elif target.mode == "declaration":

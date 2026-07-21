@@ -71,33 +71,55 @@ BDS服务端/
 
 ```json
 {
-    "version": 2,
+    "version": 3,
+    "_comment_logLevel": "日志级别：silent | fatal | error | warn | info | debug | trace",
     "logLevel": "info",
+    "_comment_host": "HTTP 监听地址：0.0.0.0 表示允许其他设备访问，127.0.0.1 表示仅本机访问",
     "host": "0.0.0.0",
+    "_comment_port": "HTTP 监听端口，修改后需要同步更新客户端连接地址",
     "port": 60202,
+    "_comment_enableCors": "是否返回 CORS 响应头；浏览器跨域访问时需要启用",
     "enableCors": true,
+    "_comment_apiPrefix": "API 路径前缀，客户端必须配置为相同值",
     "apiPrefix": "/api/v1",
+    "_comment_enableToken": "是否要求只读查询接口验证 token；健康检查接口始终无需 token",
     "enableToken": false,
+    "_comment_token": "只读查询令牌；enableToken=false 时可以留空，建议通过 Authorization Bearer 传递",
     "token": "",
+    "_comment_adminToken": "管理令牌；绑定、解绑、添加、移除白名单时必须填写，禁止与只读 token 相同",
     "adminToken": "",
+    "_comment_enableCommandExecution": "是否开放远程 BDS 命令接口；白名单接口不受此开关影响",
     "enableCommandExecution": false,
+    "_comment_commandAllowPrefixes": "远程命令允许前缀；空数组表示不额外限制，仅在命令接口启用时生效",
     "commandAllowPrefixes": [],
+    "_comment_commandTimeoutMs": "BDS 命令执行等待上限，单位毫秒",
     "commandTimeoutMs": 5000,
+    "_comment_commandOutputLimit": "BDS 命令返回文本最大长度",
     "commandOutputLimit": 4000,
+    "_comment_enableWhitelistBinding": "是否开放聊天账号绑定与解绑白名单接口",
     "enableWhitelistBinding": true,
+    "_comment_enforceWhitelistBinding": "是否拒绝没有普通绑定或管理员直接授权的玩家进服",
     "enforceWhitelistBinding": true,
+    "_comment_operatorBypassBinding": "OP 是否跳过绑定检查；false 表示 OP 也必须获得授权",
     "operatorBypassBinding": false,
+    "_comment_whitelistDataFailurePolicy": "玩家数据与备份都损坏时的策略：fail-open 暂停拦截 | fail-closed 拒绝无法验证的玩家",
     "whitelistDataFailurePolicy": "fail-open",
+    "_comment_repairMissingAllowlistEntriesOnStartup": "启动时补齐插件记录中缺失的 BDS 白名单，不会删除 BDS 中的额外白名单",
     "repairMissingAllowlistEntriesOnStartup": true,
+    "_comment_dataSaveIntervalSeconds": "玩家历史与统计数据自动保存周期，单位秒",
     "dataSaveIntervalSeconds": 60
 }
 ```
+
+`_comment_*` 是随配置自动生成的中文说明字段，插件不会把它们当作功能配置读取。实际使用时只需要修改对应的不带 `_comment_` 的字段。
+
+保持 `enableToken=false` 时，只读查询不需要配置 `token`。若需要调用绑定、解绑、添加或移除白名单接口，只需在服务端和客户端填写同一个非空 `adminToken`；远程命令可继续保持 `enableCommandExecution=false`。
 
 ### 配置项说明
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `version` | int | `2` | 配置文件版本 |
+| `version` | int | `3` | 配置文件版本 |
 | `logLevel` | string | `"info"` | 日志级别 |
 | `host` | string | `"0.0.0.0"` | HTTP 服务器监听地址 |
 | `port` | int | `60202` | HTTP 服务器监听端口 |
@@ -150,7 +172,27 @@ curl "http://localhost:60202/api/v1/player?name=Steve&token=your-secret-token"
 
 `whitelistDataFailurePolicy=fail-open` 仅在数据不可用时临时暂停进服绑定拦截，控制台与 `/health` 会显示 degraded；`fail-closed` 则拒绝所有无法验证授权的玩家。
 
-普通用户执行“解绑”只删除聊天账号绑定。如果同一玩家仍有管理员通过“添加白名单”建立的直接授权，BDS 白名单会保留；只有管理员“移除白名单”会同时删除该玩家的普通绑定、管理员授权和 BDS 白名单。绑定数据以本 C++ 插件的 `player-data.json` 为唯一数据源，Koishi 不保存镜像。
+普通用户执行“解绑”只删除聊天账号绑定。如果同一玩家仍有管理员通过“添加白名单”建立的直接授权，BDS 白名单会保留；只有管理员“移除白名单”会同时删除该玩家的普通绑定、管理员授权和 BDS 白名单。绑定数据以本插件的 `player-data.json` 为唯一数据源。
+
+---
+
+## 🎯 HTTP 查询能力概览
+
+下表只说明这个 HTTP 服务本身能够查询哪些 Minecraft 服务器数据。所有接口均返回 JSON，方便监控程序、管理面板或其他客户端直接读取。
+
+| 查询能力 | 请求接口 | 可以获得的信息 | 是否需要访问令牌 |
+| --- | --- | --- | --- |
+| API 概览 | `GET /` | 插件名称、插件版本、运行状态和可用接口列表 | 否 |
+| 健康检查 | `GET /api/v1/health` | 服务是否健康、玩家数据是否可用、是否从备份恢复、白名单故障策略和运行时间 | 否 |
+| 简要在线状态 | `GET /api/v1/status` | 在线状态、在线人数、BDS 版本、网络协议版本和插件版本 | 根据配置决定 |
+| 综合在线快照 | `GET /api/v1/overview` | 实时及 10 秒、60 秒、300 秒平均 TPS，在线与最大人数、在线玩家名、BDS/LeviLamina/插件版本和运行时间 | 根据配置决定 |
+| 服务器详细信息 | `GET /api/v1/server` | 世界名称、在线与最大人数、BDS 版本、LeviLamina 版本、协议版本和插件版本 | 根据配置决定 |
+| 在线玩家详情 | `GET /api/v1/players` | 所有在线玩家的名称、XUID、UUID、IP 与端口、语言、权限状态和坐标 | 根据配置决定 |
+| 在线人数 | `GET /api/v1/players/count` | 当前在线玩家数量 | 根据配置决定 |
+| 在线玩家名 | `GET /api/v1/players/names` | 当前在线玩家名列表 | 根据配置决定 |
+| 指定在线玩家 | `GET /api/v1/player?name=<玩家名>` | 指定在线玩家的身份、网络、语言、权限和坐标信息 | 根据配置决定 |
+| 历史玩家列表 | `GET /api/v1/players/history?page=<页码>&pageSize=<每页数量>` | 历史玩家分页、首次与最后出现时间、累计游玩时间、加入次数、挖掘数和击杀数 | 根据配置决定 |
+| 历史玩家统计 | `GET /api/v1/players/stats?name=<玩家名或XUID>` | 指定历史玩家的 XUID、UUID、累计游玩时间、加入次数、挖掘方块数和击杀生物数 | 根据配置决定 |
 
 ---
 
@@ -169,7 +211,7 @@ GET /
 ```json
 {
     "name": "serverinfo-rest",
-    "version": "0.2.2-alpha.5",
+    "version": "X.Y.Z-beta.W+YYYYMMDD",
     "description": "REST API for Minecraft Bedrock Server information",
     "endpoints": {
         "GET /api/v1/status": "Server status overview",
@@ -207,7 +249,7 @@ GET /api/v1/status
 {
     "status": "online",
     "plugin": "serverinfo-rest",
-    "version": "0.2.2-alpha.5",
+    "version": "X.Y.Z-beta.W+YYYYMMDD",
     "playerCount": 5
 }
 ```
@@ -309,7 +351,9 @@ GET /api/v1/player?name=PlayerName
 
 项目中包含 Python 测试脚本 `test/test_api.py`，可对 API 进行测试：
 ```bash
-# 基本用法
+# 默认连接 127.0.0.1:60202
+python test/test_api.py
+# 指定服务器地址和端口
 python test/test_api.py --host localhost --port 60202
 # 指定玩家名
 python test/test_api.py --host localhost --port 60202 --player Steve
@@ -394,13 +438,12 @@ git commit -m "build release. feat: add new API endpoint"
 1. 运行脚本同步更新所有文件中的版本号：
 
 ```bash
-python scripts/bump_version.py 1.0.1
+python scripts/bump_version.py X.Y.Z-beta.W+YYYYMMDD
 ```
 
-脚本会自动更新以下 4 处：
+脚本会自动更新以下 2 个文件：
 - `tooth.json` — 版本号唯一数据源
-- `README.md` — 根端点与 status 端点中的版本示例
-- `src/mod/ServerInfoRestMod.cpp` — `/status` 与 `/` 路由中的版本响应
+- `src/mod/ServerInfoRestMod.cpp` — API 响应使用的 `PluginVersion` 常量
 
 2. 检查差异后，提交并推送触发自动发布：
 

@@ -34,7 +34,7 @@
 namespace serverinfo_rest {
 
 namespace {
-constexpr auto PluginVersion = "0.2.2-alpha.5";
+constexpr auto PluginVersion = "0.2.3-alpha.7";
 
 int hexValue(char ch) {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -395,8 +395,8 @@ bool ServerInfoRestMod::load() {
     // 读取配置文件
     const auto& configFilePath = getSelf().getConfigDir() / "config.json";
     if (!ll::config::loadConfig(mConfig, configFilePath)) {
-        logger.warn("Cannot load configurations from {}", configFilePath.string());
-        logger.info("Saving default configurations...");
+        logger.info("Configuration is new or requires migration: {}", configFilePath.string());
+        logger.info("Saving normalized configurations...");
         if (!ll::config::saveConfig(mConfig, configFilePath)) {
             logger.error("Failed to save default configurations!");
         }

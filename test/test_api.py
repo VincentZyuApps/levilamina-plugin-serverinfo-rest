@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 serverinfo-rest API 测试脚本
-用法: python test_api.py --host <host> --port <port> --token <token>
+用法: python test_api.py [--host <host>] [--port <port>] [--token <token>]
+默认连接: http://127.0.0.1:60202
 """
 
 import argparse
@@ -98,13 +99,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
+  python test_api.py
   python test_api.py --host localhost --port 60202
   python test_api.py --host 91.whzz.online --port 60202
   python test_api.py --host localhost --port 60202 --player Steve
   python test_api.py --host localhost --port 60202 --token your-secret-token
         """,
     )
-    parser.add_argument("--host", default="localhost", help="服务器地址 (默认: localhost)")
+    parser.add_argument("--host", default="127.0.0.1", help="服务器地址 (默认: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=60202, help="服务器端口 (默认: 60202)")
     parser.add_argument("--prefix", default="/api/v1", help="API 前缀 (默认: /api/v1)")
     parser.add_argument("--player", help="要查询的玩家名 (可选)")
@@ -146,46 +148,46 @@ def main():
     results = []
     
     # 测试 1: 根路径
-    print_section("📍", "[1/7] 根路径 - API 概览")
+    print_section("📍", "[1/9] 根路径 - API 概览")
     status, data = request_api(f"{base_url}/", args.timeout)
     results.append(("根路径", print_response(status, data)))
     
     # 测试 2: 健康检查 (不需要 token)
-    print_section("❤️ ", "[2/7] 健康检查")
+    print_section("❤️ ", "[2/9] 健康检查")
     status, data = request_api(f"{api_base}/health", args.timeout)
     results.append(("健康检查", print_response(status, data)))
     
     # 测试 3: 服务器状态
-    print_section("📊", "[3/7] 服务器状态")
+    print_section("📊", "[3/9] 服务器状态")
     status, data = request_api(build_url(f"{api_base}/status"), args.timeout)
     results.append(("服务器状态", print_response(status, data)))
     
     # 测试 4: 查在线聚合快照
-    print_section("📈", "[4/8] 查在线聚合快照")
+    print_section("📈", "[4/9] 查在线聚合快照")
     status, data = request_api(build_url(f"{api_base}/overview"), args.timeout)
     results.append(("查在线聚合快照", print_response(status, data)))
 
     # 测试 5: 服务器信息
-    print_section("🖥️ ", "[5/8] 服务器信息")
+    print_section("🖥️ ", "[5/9] 服务器信息")
     status, data = request_api(build_url(f"{api_base}/server"), args.timeout)
     results.append(("服务器信息", print_response(status, data)))
     
     # 测试 5: 玩家列表
-    print_section("👥", "[6/8] 玩家列表")
+    print_section("👥", "[6/9] 玩家列表")
     status, data = request_api(build_url(f"{api_base}/players"), args.timeout)
     results.append(("玩家列表", print_response(status, data)))
     
     # 测试 6: 玩家数量
-    print_section("🔢", "[7/8] 玩家数量")
+    print_section("🔢", "[7/9] 玩家数量")
     status, data = request_api(build_url(f"{api_base}/players/count"), args.timeout)
     results.append(("玩家数量", print_response(status, data)))
     
     # 测试 7: 玩家名列表
-    print_section("📝", "[8/8] 玩家名列表")
+    print_section("📝", "[8/9] 玩家名列表")
     status, data = request_api(build_url(f"{api_base}/players/names"), args.timeout)
     results.append(("玩家名列表", print_response(status, data)))
 
-    print_section("📚", "[9/10] 历史玩家分页")
+    print_section("📚", "[9/9] 历史玩家分页")
     status, data = request_api(build_url(f"{api_base}/players/history", "page=1&pageSize=10"), args.timeout)
     results.append(("历史玩家分页", print_response(status, data)))
     
