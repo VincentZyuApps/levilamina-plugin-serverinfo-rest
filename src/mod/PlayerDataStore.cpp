@@ -19,12 +19,11 @@
 namespace serverinfo_rest {
 namespace {
 
-constexpr int DataVersion = 1;
+constexpr int DataVersion = 2;
 
 struct DecodedData {
     std::unordered_map<std::string, PlayerRecord> players;
     std::vector<WhitelistBinding> bindings;
-    std::vector<AdminWhitelistGrant> adminWhitelist;
 };
 
 std::string normalize(std::string value) {
@@ -67,75 +66,67 @@ bool decodeData(const std::string& content, DecodedData& decoded, std::string& e
             return false;
         }
 
-    const auto playersIt = json.find("players");
-    const auto bindingsIt = json.find("bindings");
-    const auto adminIt = json.find("adminWhitelist");
-    if (playersIt == json.end() || !playersIt->is_array()
-        || bindingsIt == json.end() || !bindingsIt->is_array()
-        || adminIt == json.end() || !adminIt->is_array()) {
-        error = "players, bindings and adminWhitelist must be arrays";
-        return false;
-    }
+        const auto playersIt = json.find("players");
+        const auto bindingsIt = json.find("bindings");
+        if (playersIt == json.end() || !playersIt->is_array()
+            || bindingsIt == json.end() || !bindingsIt->is_array()) {
+            error = "players and bindings must be arrays";
+            return false;
+        }
 
-    DecodedData candidate;
-    for (const auto& item : *playersIt) {
-        if (!item.is_object()) {
-            error = "players contains a non-object item";
-            return false;
+        DecodedData candidate;
+        for (const auto& item : *playersIt) {
+            if (!item.is_object()) {
+                error = "players contains a non-object item";
+                return false;
+            }
+            PlayerRecord record;
+            record.xuid = readString(item, "xuid");
+            if (record.xuid.empty()) {
+                error = "player record is missing xuid";
+                return false;
+            }
+            record.uuid = readString(item, "uuid");
+            record.name = readString(item, "name");
+            record.firstSeenMs = readInt64(item, "firstSeenMs");
+            record.lastSeenMs = readInt64(item, "lastSeenMs");
+            record.totalPlayMs = readInt64(item, "totalPlayMs");
+            record.joinCount = readUInt64(item, "joinCount");
+            record.blocksMined = readUInt64(item, "blocksMined");
+            record.mobsKilled = readUInt64(item, "mobsKilled");
+            candidate.players[record.xuid] = std::move(record);
         }
-        PlayerRecord record;
-        record.xuid = readString(item, "xuid");
-        if (record.xuid.empty()) {
-            error = "player record is missing xuid";
-            return false;
-        }
-        record.uuid = readString(item, "uuid");
-        record.name = readString(item, "name");
-        record.firstSeenMs = readInt64(item, "firstSeenMs");
-        record.lastSeenMs = readInt64(item, "lastSeenMs");
-        record.totalPlayMs = readInt64(item, "totalPlayMs");
-        record.joinCount = readUInt64(item, "joinCount");
-        record.blocksMined = readUInt64(item, "blocksMined");
-        record.mobsKilled = readUInt64(item, "mobsKilled");
-        candidate.players[record.xuid] = std::move(record);
-    }
 
-    for (const auto& item : *bindingsIt) {
-        if (!item.is_object()) {
-            error = "bindings contains a non-object item";
-            return false;
+        std::unordered_set<std::string> bindingUsers;
+        std::unordered_set<std::string> bindingPlayers;
+        for (const auto& item : *bindingsIt) {
+            if (!item.is_object()) {
+                error = "bindings contains a non-object item";
+                return false;
+            }
+            WhitelistBinding binding;
+            binding.platform = readString(item, "platform");
+            binding.selfId = readString(item, "selfId");
+            binding.userId = readString(item, "userId");
+            binding.channelId = readString(item, "channelId");
+            binding.playerName = readString(item, "playerName");
+            binding.xuid = readString(item, "xuid");
+            binding.boundAtMs = readInt64(item, "boundAtMs");
+            if (binding.platform.empty() || binding.selfId.empty() || binding.userId.empty()
+                || binding.playerName.empty()) {
+                error = "binding is missing platform, selfId, userId or playerName";
+                return false;
+            }
+            if (!bindingUsers.insert(bindingKey(binding.platform, binding.selfId, binding.userId)).second) {
+                error = "multiple bindings use the same chat account";
+                return false;
+            }
+            if (!bindingPlayers.insert(normalize(binding.playerName)).second) {
+                error = "multiple bindings use the same player";
+                return false;
+            }
+            candidate.bindings.push_back(std::move(binding));
         }
-        WhitelistBinding binding;
-        binding.platform = readString(item, "platform");
-        binding.selfId = readString(item, "selfId");
-        binding.userId = readString(item, "userId");
-        binding.channelId = readString(item, "channelId");
-        binding.playerName = readString(item, "playerName");
-        binding.xuid = readString(item, "xuid");
-        binding.boundAtMs = readInt64(item, "boundAtMs");
-        if (binding.platform.empty() || binding.userId.empty() || binding.playerName.empty()) {
-            error = "binding is missing platform, userId or playerName";
-            return false;
-        }
-        candidate.bindings.push_back(std::move(binding));
-    }
-
-    for (const auto& item : *adminIt) {
-        if (!item.is_object()) {
-            error = "adminWhitelist contains a non-object item";
-            return false;
-        }
-        AdminWhitelistGrant grant;
-        grant.playerName = readString(item, "playerName");
-        grant.xuid = readString(item, "xuid");
-        grant.addedBy = readString(item, "addedBy");
-        grant.addedAtMs = readInt64(item, "addedAtMs");
-        if (grant.playerName.empty()) {
-            error = "administrator allowlist grant is missing playerName";
-            return false;
-        }
-        candidate.adminWhitelist.push_back(std::move(grant));
-    }
 
         decoded = std::move(candidate);
         return true;
@@ -266,7 +257,6 @@ bool PlayerDataStore::load(std::string& error) {
         std::lock_guard<std::mutex> lock(mMutex);
         mPlayers = std::move(decoded.players);
         mBindings = std::move(decoded.bindings);
-        mAdminWhitelist = std::move(decoded.adminWhitelist);
         mActiveSessions.clear();
         mDirty = false;
         mRevision = 0;
@@ -383,15 +373,6 @@ bool PlayerDataStore::save(std::string& error, bool force) {
                 {"boundAtMs", binding.boundAtMs}
             });
         }
-        json["adminWhitelist"] = nlohmann::json::array();
-        for (const auto& grant : mAdminWhitelist) {
-            json["adminWhitelist"].push_back({
-                {"playerName", grant.playerName},
-                {"xuid", grant.xuid},
-                {"addedBy", grant.addedBy},
-                {"addedAtMs", grant.addedAtMs}
-            });
-        }
         revision = mRevision;
     }
 
@@ -426,12 +407,11 @@ std::vector<std::string> PlayerDataStore::authorizedPlayerNames() const {
     std::lock_guard<std::mutex> lock(mMutex);
     std::vector<std::string> result;
     std::unordered_set<std::string> seen;
-    result.reserve(mBindings.size() + mAdminWhitelist.size());
+    result.reserve(mBindings.size());
     auto append = [&](const std::string& name) {
         if (!name.empty() && seen.insert(normalize(name)).second) result.push_back(name);
     };
     for (const auto& binding : mBindings) append(binding.playerName);
-    for (const auto& grant : mAdminWhitelist) append(grant.playerName);
     return result;
 }
 
@@ -541,7 +521,8 @@ BindingResult PlayerDataStore::bindWhitelist(
     const std::string& userId,
     const std::string& channelId,
     const std::string& playerName,
-    std::int64_t nowMs
+    std::int64_t nowMs,
+    bool force
 ) {
     BindingResult result;
     const auto wantedUser = bindingKey(platform, selfId, userId);
@@ -549,19 +530,21 @@ BindingResult PlayerDataStore::bindWhitelist(
     std::lock_guard<std::mutex> lock(mMutex);
 
     for (const auto& binding : mBindings) {
-        if (bindingKey(binding.platform, binding.selfId, binding.userId) == wantedUser) {
-            if (normalize(binding.playerName) == wantedPlayer) {
-                result.success = true;
-                result.binding = binding;
-            } else {
-                result.error = "this chat account is already bound to another player";
-            }
+        const auto sameUser = bindingKey(binding.platform, binding.selfId, binding.userId) == wantedUser;
+        const auto samePlayer = normalize(binding.playerName) == wantedPlayer;
+        if (sameUser && samePlayer) {
+            result.success = true;
+            result.binding = binding;
             return result;
         }
-        if (normalize(binding.playerName) == wantedPlayer) {
-            result.error = "this player is already bound to another chat account";
+        if (!sameUser && !samePlayer) continue;
+        if (!force) {
+            result.error = sameUser
+                ? "this chat account is already bound to another player"
+                : "this player is already bound to another chat account";
             return result;
         }
+        result.replacedBindings.push_back(binding);
     }
 
     WhitelistBinding binding;
@@ -570,11 +553,24 @@ BindingResult PlayerDataStore::bindWhitelist(
     binding.userId = userId;
     binding.channelId = channelId;
     binding.playerName = playerName;
+    for (const auto& replaced : result.replacedBindings) {
+        if (normalize(replaced.playerName) == wantedPlayer && !replaced.xuid.empty()) {
+            binding.xuid = replaced.xuid;
+            break;
+        }
+    }
     binding.boundAtMs = nowMs;
+    if (!result.replacedBindings.empty()) {
+        std::erase_if(mBindings, [&](const auto& current) {
+            return bindingKey(current.platform, current.selfId, current.userId) == wantedUser
+                || normalize(current.playerName) == wantedPlayer;
+        });
+    }
     mBindings.push_back(binding);
     markChanged();
     result.success = true;
     result.created = true;
+    result.forced = !result.replacedBindings.empty();
     result.binding = std::move(binding);
     return result;
 }
@@ -588,6 +584,16 @@ std::optional<WhitelistBinding> PlayerDataStore::findWhitelistBinding(
     std::lock_guard<std::mutex> lock(mMutex);
     const auto it = std::find_if(mBindings.begin(), mBindings.end(), [&](const auto& binding) {
         return bindingKey(binding.platform, binding.selfId, binding.userId) == wanted;
+    });
+    if (it == mBindings.end()) return std::nullopt;
+    return *it;
+}
+
+std::optional<WhitelistBinding> PlayerDataStore::findWhitelistBindingByPlayer(const std::string& playerName) const {
+    const auto wanted = normalize(playerName);
+    std::lock_guard<std::mutex> lock(mMutex);
+    const auto it = std::find_if(mBindings.begin(), mBindings.end(), [&](const auto& binding) {
+        return normalize(binding.playerName) == wanted;
     });
     if (it == mBindings.end()) return std::nullopt;
     return *it;
@@ -610,49 +616,17 @@ std::optional<WhitelistBinding> PlayerDataStore::unbindWhitelist(
     return binding;
 }
 
-std::pair<AdminWhitelistGrant, bool> PlayerDataStore::addAdminWhitelist(
-    const std::string& playerName,
-    const std::string& addedBy,
-    std::int64_t nowMs
-) {
+std::optional<WhitelistBinding> PlayerDataStore::removeWhitelistBinding(const std::string& playerName) {
     const auto wanted = normalize(playerName);
     std::lock_guard<std::mutex> lock(mMutex);
-    for (const auto& grant : mAdminWhitelist) {
-        if (normalize(grant.playerName) == wanted) return {grant, false};
-    }
-    AdminWhitelistGrant grant;
-    grant.playerName = playerName;
-    grant.addedBy = addedBy;
-    grant.addedAtMs = nowMs;
-    mAdminWhitelist.push_back(grant);
-    markChanged();
-    return {grant, true};
-}
-
-bool PlayerDataStore::hasWhitelistAuthorization(const std::string& playerName) const {
-    const auto wanted = normalize(playerName);
-    std::lock_guard<std::mutex> lock(mMutex);
-    return std::ranges::any_of(mAdminWhitelist, [&](const auto& grant) {
-        return normalize(grant.playerName) == wanted;
-    }) || std::ranges::any_of(mBindings, [&](const auto& binding) {
+    const auto it = std::find_if(mBindings.begin(), mBindings.end(), [&](const auto& binding) {
         return normalize(binding.playerName) == wanted;
     });
-}
-
-bool PlayerDataStore::revokePlayerWhitelist(const std::string& playerName) {
-    const auto wanted = normalize(playerName);
-    std::lock_guard<std::mutex> lock(mMutex);
-    const auto previousGrantCount = mAdminWhitelist.size();
-    const auto previousBindingCount = mBindings.size();
-    std::erase_if(mAdminWhitelist, [&](const auto& grant) {
-        return normalize(grant.playerName) == wanted;
-    });
-    std::erase_if(mBindings, [&](const auto& binding) {
-        return normalize(binding.playerName) == wanted;
-    });
-    if (previousGrantCount == mAdminWhitelist.size() && previousBindingCount == mBindings.size()) return false;
+    if (it == mBindings.end()) return std::nullopt;
+    auto binding = *it;
+    mBindings.erase(it);
     markChanged();
-    return true;
+    return binding;
 }
 
 bool PlayerDataStore::authorizePlayer(
@@ -664,21 +638,6 @@ bool PlayerDataStore::authorizePlayer(
     if (isOperator && operatorBypass) return true;
     const auto wantedName = normalize(playerName);
     std::lock_guard<std::mutex> lock(mMutex);
-    for (auto& grant : mAdminWhitelist) {
-        if (!grant.xuid.empty() && grant.xuid == xuid) {
-            if (grant.playerName != playerName) {
-                grant.playerName = playerName;
-                markChanged();
-            }
-            return true;
-        }
-        if (grant.xuid.empty() && normalize(grant.playerName) == wantedName) {
-            grant.xuid = xuid;
-            grant.playerName = playerName;
-            markChanged();
-            return true;
-        }
-    }
     for (auto& binding : mBindings) {
         if (!binding.xuid.empty() && binding.xuid == xuid) {
             if (binding.playerName != playerName) {

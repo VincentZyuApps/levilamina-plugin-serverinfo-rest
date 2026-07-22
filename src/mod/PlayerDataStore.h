@@ -34,13 +34,6 @@ struct WhitelistBinding {
     std::int64_t boundAtMs = 0;
 };
 
-struct AdminWhitelistGrant {
-    std::string playerName;
-    std::string xuid;
-    std::string addedBy;
-    std::int64_t addedAtMs = 0;
-};
-
 struct PlayerHistoryPage {
     std::vector<PlayerRecord> players;
     std::size_t total = 0;
@@ -51,8 +44,10 @@ struct PlayerHistoryPage {
 struct BindingResult {
     bool success = false;
     bool created = false;
+    bool forced = false;
     std::string error;
     WhitelistBinding binding;
+    std::vector<WhitelistBinding> replacedBindings;
 };
 
 class PlayerDataStore {
@@ -85,25 +80,21 @@ public:
         const std::string& userId,
         const std::string& channelId,
         const std::string& playerName,
-        std::int64_t nowMs
+        std::int64_t nowMs,
+        bool force = false
     );
     std::optional<WhitelistBinding> findWhitelistBinding(
         const std::string& platform,
         const std::string& selfId,
         const std::string& userId
     ) const;
+    std::optional<WhitelistBinding> findWhitelistBindingByPlayer(const std::string& playerName) const;
     std::optional<WhitelistBinding> unbindWhitelist(
         const std::string& platform,
         const std::string& selfId,
         const std::string& userId
     );
-    std::pair<AdminWhitelistGrant, bool> addAdminWhitelist(
-        const std::string& playerName,
-        const std::string& addedBy,
-        std::int64_t nowMs
-    );
-    bool hasWhitelistAuthorization(const std::string& playerName) const;
-    bool revokePlayerWhitelist(const std::string& playerName);
+    std::optional<WhitelistBinding> removeWhitelistBinding(const std::string& playerName);
     bool authorizePlayer(
         const std::string& playerName,
         const std::string& xuid,
@@ -121,7 +112,6 @@ private:
     std::unordered_map<std::string, PlayerRecord> mPlayers;
     std::unordered_map<std::string, std::int64_t> mActiveSessions;
     std::vector<WhitelistBinding> mBindings;
-    std::vector<AdminWhitelistGrant> mAdminWhitelist;
     std::uint64_t mRevision = 0;
     bool mDirty = false;
     std::atomic<bool> mAvailable{true};

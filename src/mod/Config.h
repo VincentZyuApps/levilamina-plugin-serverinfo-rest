@@ -6,7 +6,7 @@
 namespace serverinfo_rest {
 
 struct Config {
-    int version = 5;
+    int version = 6;
 
     std::string _comment_logLevel = "📝🔍 日志级别：silent | fatal | error | warn | info | debug | trace";
     std::string logLevel = "info";
@@ -21,7 +21,7 @@ struct Config {
     bool enableCors = true;
 
     std::string _comment_apiPrefix = "📡🛣️ API 路径前缀，客户端必须配置为相同值";
-    std::string apiPrefix = "/api/v1";
+    std::string apiPrefix = "/api/v2";
 
     std::string _comment_enableToken = "🔐👀 是否要求只读查询接口验证 token；健康检查接口始终无需 token";
     bool enableToken = false;
@@ -33,7 +33,8 @@ struct Config {
         "📥🔑 只读 token 接收方式：param | header | both；param 使用 URL query 参数 ?token=...";
     std::string tokenReceiveMode = "both";
 
-    std::string _comment_adminToken = "🛡️🔑 管理令牌；绑定、解绑、添加、移除白名单时必须填写，禁止与只读 token 相同";
+    std::string _comment_adminToken =
+        "🛡️🔑 管理令牌；绑定、解绑、查询、添加、移除玩家绑定时必须填写，禁止与只读 token 相同";
     std::string adminToken = "";
 
     std::string _comment_adminTokenReceiveMode =
@@ -52,14 +53,14 @@ struct Config {
     std::string _comment_commandOutputLimit = "📏📤 BDS 命令返回文本最大长度";
     int commandOutputLimit = 4000;
 
-    std::string _comment_enableWhitelistBindingApiEndpoints = "🔗🌐 是否开放普通用户绑定与解绑白名单接口";
+    std::string _comment_enableWhitelistBindingApiEndpoints = "🔗🌐 是否开放普通用户绑定与解绑玩家接口";
     bool enableWhitelistBindingApiEndpoints = true;
 
-    std::string _comment_enableWhitelistManagementApiEndpoints = "🛡️🌐 是否开放管理员添加与移除白名单接口";
+    std::string _comment_enableWhitelistManagementApiEndpoints = "🛡️🌐 是否开放管理员代绑、查询与移除玩家绑定接口";
     bool enableWhitelistManagementApiEndpoints = true;
 
     std::string _comment_requireWhitelistAuthorizationOnJoin =
-        "🚪🛡️ 玩家进服时是否要求已有普通绑定或管理员直接授权";
+        "🚪🛡️ 玩家进服时是否要求已有聊天账号绑定";
     bool requireWhitelistAuthorizationOnJoin = true;
 
     std::string _comment_operatorBypassesWhitelistAuthorization =

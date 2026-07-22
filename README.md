@@ -79,7 +79,7 @@ BDS服务端/
 
 ```json
 {
-    "version": 5,
+    "version": 6,
     "_comment_logLevel": "📝🔍 日志级别：silent | fatal | error | warn | info | debug | trace",
     "logLevel": "info",
     "_comment_host": "🌐🖥️ HTTP 监听地址：0.0.0.0 表示允许其他设备访问，127.0.0.1 表示仅本机访问",
@@ -89,14 +89,14 @@ BDS服务端/
     "_comment_enableCors": "🌍🔓 是否返回 CORS 响应头；浏览器跨域访问时需要启用",
     "enableCors": true,
     "_comment_apiPrefix": "📡🛣️ API 路径前缀，客户端必须配置为相同值",
-    "apiPrefix": "/api/v1",
+    "apiPrefix": "/api/v2",
     "_comment_enableToken": "🔐👀 是否要求只读查询接口验证 token；健康检查接口始终无需 token",
     "enableToken": false,
     "_comment_token": "🔑📖 只读查询令牌；enableToken=false 时可以留空，禁止与 adminToken 相同",
     "token": "",
     "_comment_tokenReceiveMode": "📥🔑 只读 token 接收方式：param | header | both；param 使用 URL query 参数 ?token=...",
     "tokenReceiveMode": "both",
-    "_comment_adminToken": "🛡️🔑 管理令牌；绑定、解绑、添加、移除白名单时必须填写，禁止与只读 token 相同",
+    "_comment_adminToken": "🛡️🔑 管理令牌；绑定、解绑、查询、添加、移除玩家绑定时必须填写，禁止与只读 token 相同",
     "adminToken": "",
     "_comment_adminTokenReceiveMode": "📥🛡️ 管理 token 接收方式：param | header | both；默认 header，避免高权限令牌进入 URL",
     "adminTokenReceiveMode": "header",
@@ -108,11 +108,11 @@ BDS服务端/
     "commandTimeoutMs": 5000,
     "_comment_commandOutputLimit": "📏📤 BDS 命令返回文本最大长度",
     "commandOutputLimit": 4000,
-    "_comment_enableWhitelistBindingApiEndpoints": "🔗🌐 是否开放普通用户绑定与解绑白名单接口",
+    "_comment_enableWhitelistBindingApiEndpoints": "🔗🌐 是否开放普通用户绑定与解绑玩家接口",
     "enableWhitelistBindingApiEndpoints": true,
-    "_comment_enableWhitelistManagementApiEndpoints": "🛡️🌐 是否开放管理员添加与移除白名单接口",
+    "_comment_enableWhitelistManagementApiEndpoints": "🛡️🌐 是否开放管理员代绑、查询与移除玩家绑定接口",
     "enableWhitelistManagementApiEndpoints": true,
-    "_comment_requireWhitelistAuthorizationOnJoin": "🚪🛡️ 玩家进服时是否要求已有普通绑定或管理员直接授权",
+    "_comment_requireWhitelistAuthorizationOnJoin": "🚪🛡️ 玩家进服时是否要求已有聊天账号绑定",
     "requireWhitelistAuthorizationOnJoin": true,
     "_comment_operatorBypassesWhitelistAuthorization": "👑🚪 OP 是否跳过进服授权检查；false 表示 OP 也必须获得授权",
     "operatorBypassesWhitelistAuthorization": false,
@@ -129,18 +129,18 @@ BDS服务端/
 
 保持 `enableToken=false` 时，只读查询不需要配置 `token`。若需要调用绑定、解绑、添加或移除白名单接口，只需在服务端和客户端填写同一个非空 `adminToken`；远程命令可继续保持 `enableCommandExecution=false`。
 
-从 v4 升级时，插件会自动将 `enableWhitelistBinding`、`enforceWhitelistBinding` 和 `operatorBypassBinding` 迁移为对应的新字段，并保留原有布尔值。新增的 `enableWhitelistManagementApiEndpoints` 默认为 `true`，以保持旧版本中管理员添加与移除接口始终可用的行为。迁移完成后配置文件会以 `version=5` 重写，其他配置不会改变。
+本版本使用 API v2 和配置格式 v6，不包含 API v1、旧配置或旧版 `player-data.json` 的迁移逻辑。升级部署前请删除旧配置与玩家数据，让插件生成新文件；需要继续使用 API v1 时请安装对应的旧版 Release。
 
 ### 配置项说明
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `version` | int | `5` | 配置文件版本 |
+| `version` | int | `6` | 配置文件版本；本版本不自动迁移旧配置 |
 | `logLevel` | string | `"info"` | 日志级别 |
 | `host` | string | `"0.0.0.0"` | HTTP 服务器监听地址 |
 | `port` | int | `60202` | HTTP 服务器监听端口 |
 | `enableCors` | bool | `true` | 是否启用 CORS |
-| `apiPrefix` | string | `"/api/v1"` | API 路径前缀 |
+| `apiPrefix` | string | `"/api/v2"` | API v2 路径前缀 |
 | `enableToken` | bool | `false` | 是否启用 Token 认证 |
 | `token` | string | `""` | 访问令牌 |
 | `tokenReceiveMode` | string | `"both"` | 只读 token 接收方式：`param`、`header` 或 `both` |
@@ -150,9 +150,9 @@ BDS服务端/
 | `commandAllowPrefixes` | string[] | `[]` | 允许的命令前缀；空数组表示不额外限制 |
 | `commandTimeoutMs` | int | `5000` | 主线程命令执行等待上限，范围由插件约束 |
 | `commandOutputLimit` | int | `4000` | 命令返回文本最大长度 |
-| `enableWhitelistBindingApiEndpoints` | bool | `true` | 是否开放普通用户绑定与解绑接口 |
-| `enableWhitelistManagementApiEndpoints` | bool | `true` | 是否开放管理员添加与移除白名单接口 |
-| `requireWhitelistAuthorizationOnJoin` | bool | `true` | 玩家进服时是否要求已有普通绑定或管理员直接授权 |
+| `enableWhitelistBindingApiEndpoints` | bool | `true` | 是否开放普通用户绑定与解绑玩家接口 |
+| `enableWhitelistManagementApiEndpoints` | bool | `true` | 是否开放管理员代绑、查询与移除玩家绑定接口 |
+| `requireWhitelistAuthorizationOnJoin` | bool | `true` | 玩家进服时是否要求已有聊天账号绑定 |
 | `operatorBypassesWhitelistAuthorization` | bool | `false` | OP 是否跳过进服授权检查；默认关闭，确保所有玩家遵守同一规则 |
 | `whitelistDataFailurePolicy` | string | `"fail-open"` | 数据文件与备份都损坏时使用 `fail-open` 暂停拦截，或 `fail-closed` 拒绝无法验证的玩家 |
 | `repairMissingAllowlistEntriesOnStartup` | bool | `true` | 启动时对插件记录的有效授权执行幂等 `allowlist add`；不会删除 BDS 的额外白名单 |
@@ -160,17 +160,17 @@ BDS服务端/
 
 ### Token 认证
 
-启用 Token 认证后，所有只读 API 请求（除了 `/api/v1/health`）都必须按 `tokenReceiveMode` 携带 token：
+启用 Token 认证后，所有只读 API 请求（除了 `/api/v2/health`）都必须按 `tokenReceiveMode` 携带 token：
 
 ```bash
 # 未启用 Token
-curl http://localhost:60202/api/v1/players
+curl http://localhost:60202/api/v2/players
 
 # param：通过 URL query 参数发送
-curl "http://localhost:60202/api/v1/players?token=your-secret-token"
+curl "http://localhost:60202/api/v2/players?token=your-secret-token"
 
 # header：通过 Authorization Bearer 请求头发送
-curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/players
+curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v2/players
 
 # both：以上两种形式均可；同时提供时两个 token 必须一致
 ```
@@ -192,7 +192,7 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/
 
 插件数据目录包含以下文件：
 
-- `player-data.json`：正式数据，保存玩家历史、统计、普通聊天账号绑定和管理员直接授权。
+- `player-data.json`：正式数据，格式版本为 2，保存玩家历史、统计和一对一聊天账号绑定。
 - `player-data.json.bak`：上一次成功保存的数据，由原子替换流程自动维护。
 - `player-data.json.corrupt-<时间戳>.json`：启动时发现损坏的文件原样保留，便于人工恢复。
 
@@ -200,11 +200,13 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/
 
 `whitelistDataFailurePolicy=fail-open` 仅在数据不可用时临时暂停进服绑定拦截，控制台与 `/health` 会显示 degraded；`fail-closed` 则拒绝所有无法验证授权的玩家。
 
-四个白名单开关彼此独立：`enableWhitelistBindingApiEndpoints` 控制普通用户 bind/unbind，`enableWhitelistManagementApiEndpoints` 控制管理员 add/remove，`requireWhitelistAuthorizationOnJoin` 控制玩家进服拦截，`operatorBypassesWhitelistAuthorization` 只在进服授权检查启用时生效。若白天只想测试 API 而不影响玩家进服，可以保持两个接口开关为 `true`，并将 `requireWhitelistAuthorizationOnJoin` 设为 `false`。
+四个白名单开关彼此独立：`enableWhitelistBindingApiEndpoints` 控制普通用户 bind/unbind，`enableWhitelistManagementApiEndpoints` 控制管理员 state/add/remove，`requireWhitelistAuthorizationOnJoin` 控制玩家进服拦截，`operatorBypassesWhitelistAuthorization` 只在进服授权检查启用时生效。若白天只想测试 API 而不影响玩家进服，可以保持两个接口开关为 `true`，并将 `requireWhitelistAuthorizationOnJoin` 设为 `false`。
 
 `POST /players/stats/bound` 只读取已有聊天账号绑定，不会修改 BDS 白名单，也不受 `enableWhitelistBindingApiEndpoints` 或 `requireWhitelistAuthorizationOnJoin` 影响。接口使用管理令牌，并通过 JSON 请求体接收聊天平台身份，避免将用户标识写入 URL。
 
-普通用户执行“解绑”只删除聊天账号绑定。如果同一玩家仍有管理员通过“添加白名单”建立的直接授权，BDS 白名单会保留；只有管理员“移除白名单”会同时删除该玩家的普通绑定、管理员授权和 BDS 白名单。绑定数据以本插件的 `player-data.json` 为唯一数据源。
+API v2 只有“已绑定”和“未绑定”两种状态，不再区分普通绑定与管理员直接授权。一个聊天账号只能绑定一个 Xbox 玩家，一个 Xbox 玩家也只能绑定一个聊天账号。普通用户解绑或管理员按玩家名移除时都会删除唯一绑定，并同步移除该玩家的 BDS allowlist 项目。
+
+管理员添加接口必须同时提供玩家名和当前聊天平台下的目标用户身份。发生用户侧或玩家侧冲突时默认返回 `409`；传入 `force=true` 会原子替换双方的冲突绑定，并立即移除失去绑定的旧玩家 BDS allowlist 项目。
 
 ---
 
@@ -215,17 +217,20 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/
 | 查询能力 | 请求接口 | 可以获得的信息 | 是否需要访问令牌 |
 | --- | --- | --- | --- |
 | API 概览 | `GET /` | 插件名称、插件版本、运行状态和可用接口列表 | 否 |
-| 健康检查 | `GET /api/v1/health` | 服务是否健康、玩家数据是否可用、是否从备份恢复、白名单故障策略和运行时间 | 否 |
-| 简要在线状态 | `GET /api/v1/status` | 在线状态、在线人数、BDS 版本、网络协议版本和插件版本 | 根据配置决定 |
-| 综合在线快照 | `GET /api/v1/overview` | 实时及 10 秒、60 秒、300 秒平均 TPS，在线与最大人数、在线玩家名、BDS/LeviLamina/插件版本和运行时间 | 根据配置决定 |
-| 服务器详细信息 | `GET /api/v1/server` | 世界名称、在线与最大人数、BDS 版本、LeviLamina 版本、协议版本和插件版本 | 根据配置决定 |
-| 在线玩家详情 | `GET /api/v1/players` | 所有在线玩家的名称、XUID、UUID、IP 与端口、语言、权限状态和坐标 | 根据配置决定 |
-| 在线人数 | `GET /api/v1/players/count` | 当前在线玩家数量 | 根据配置决定 |
-| 在线玩家名 | `GET /api/v1/players/names` | 当前在线玩家名列表 | 根据配置决定 |
-| 指定在线玩家 | `GET /api/v1/player?name=<玩家名>` | 指定在线玩家的身份、网络、语言、权限和坐标信息 | 根据配置决定 |
-| 历史玩家列表 | `GET /api/v1/players/history?page=<页码>&pageSize=<每页数量>` | 历史玩家分页、首次与最后出现时间、累计游玩时间、加入次数、挖掘数和击杀数 | 根据配置决定 |
-| 历史玩家统计 | `GET /api/v1/players/stats?name=<玩家名或XUID>` | 指定历史玩家的 XUID、UUID、累计游玩时间、加入次数、挖掘方块数和击杀生物数 | 根据配置决定 |
-| 绑定账号统计 | `POST /api/v1/players/stats/bound` | 根据 `platform`、`selfId`、`userId` 查询当前聊天账号绑定玩家的历史统计 | 管理令牌 |
+| 健康检查 | `GET /api/v2/health` | 服务是否健康、玩家数据是否可用、是否从备份恢复、白名单故障策略和运行时间 | 否 |
+| 简要在线状态 | `GET /api/v2/status` | 在线状态、在线人数、BDS 版本、网络协议版本和插件版本 | 根据配置决定 |
+| 综合在线快照 | `GET /api/v2/overview` | 实时及 10 秒、60 秒、300 秒平均 TPS，在线与最大人数、在线玩家名、BDS/LeviLamina/插件版本和运行时间 | 根据配置决定 |
+| 服务器详细信息 | `GET /api/v2/server` | 世界名称、在线与最大人数、BDS 版本、LeviLamina 版本、协议版本和插件版本 | 根据配置决定 |
+| 在线玩家详情 | `GET /api/v2/players` | 所有在线玩家的名称、XUID、UUID、IP 与端口、语言、权限状态和坐标 | 根据配置决定 |
+| 在线人数 | `GET /api/v2/players/count` | 当前在线玩家数量 | 根据配置决定 |
+| 在线玩家名 | `GET /api/v2/players/names` | 当前在线玩家名列表 | 根据配置决定 |
+| 指定在线玩家 | `GET /api/v2/player?name=<玩家名>` | 指定在线玩家的身份、网络、语言、权限和坐标信息 | 根据配置决定 |
+| 历史玩家列表 | `GET /api/v2/players/history?page=<页码>&pageSize=<每页数量>` | 历史玩家分页、首次与最后出现时间、累计游玩时间、加入次数、挖掘数和击杀数 | 根据配置决定 |
+| 历史玩家统计 | `GET /api/v2/players/stats?name=<玩家名或XUID>` | 指定历史玩家的 XUID、UUID、累计游玩时间、加入次数、挖掘方块数和击杀生物数 | 根据配置决定 |
+| 绑定账号统计 | `POST /api/v2/players/stats/bound` | 根据 `platform`、`selfId`、`userId` 查询当前聊天账号绑定玩家的历史统计 | 管理令牌 |
+| 查询绑定状态 | `POST /api/v2/whitelist/state` | 按 Xbox 玩家名查询唯一绑定状态 | 管理令牌 |
+| 管理员代绑 | `POST /api/v2/whitelist/add` | 为指定聊天用户创建绑定；可用 `force=true` 替换冲突 | 管理令牌 |
+| 管理员移除 | `POST /api/v2/whitelist/remove` | 按 Xbox 玩家名移除唯一绑定与 BDS allowlist 项目 | 管理令牌 |
 
 ---
 
@@ -247,13 +252,13 @@ GET /
     "version": "X.Y.Z-beta.W+YYYYMMDD",
     "description": "REST API for Minecraft Bedrock Server information",
     "endpoints": {
-        "GET /api/v1/status": "Server status overview",
-        "GET /api/v1/health": "Health check",
-        "GET /api/v1/server": "Server information",
-        "GET /api/v1/players": "List all online players",
-        "GET /api/v1/players/count": "Get online player count",
-        "GET /api/v1/players/names": "Get list of player names",
-        "GET /api/v1/player?name=<name>": "Get specific player information"
+        "GET /api/v2/status": "Server status overview",
+        "GET /api/v2/health": "Health check",
+        "GET /api/v2/server": "Server information",
+        "GET /api/v2/players": "List all online players",
+        "GET /api/v2/players/count": "Get online player count",
+        "GET /api/v2/players/names": "Get list of player names",
+        "GET /api/v2/player?name=<name>": "Get specific player information"
     }
 }
 ```
@@ -261,7 +266,7 @@ GET /
 ### 健康检查
 
 ```
-GET /api/v1/health
+GET /api/v2/health
 ```
 
 此端点**不需要 Token 认证**，适用于监控。
@@ -275,7 +280,7 @@ GET /api/v1/health
 ### 服务器状态
 
 ```
-GET /api/v1/status
+GET /api/v2/status
 ```
 
 ```json
@@ -290,7 +295,7 @@ GET /api/v1/status
 ### 服务器信息
 
 ```
-GET /api/v1/server
+GET /api/v2/server
 ```
 
 ```json
@@ -304,7 +309,7 @@ GET /api/v1/server
 ### 玩家列表
 
 ```
-GET /api/v1/players
+GET /api/v2/players
 ```
 
 ```json
@@ -328,7 +333,7 @@ GET /api/v1/players
 ### 玩家数量
 
 ```
-GET /api/v1/players/count
+GET /api/v2/players/count
 ```
 
 ```json
@@ -340,7 +345,7 @@ GET /api/v1/players/count
 ### 玩家名列表
 
 ```
-GET /api/v1/players/names
+GET /api/v2/players/names
 ```
 
 ```json
@@ -353,7 +358,7 @@ GET /api/v1/players/names
 ### 指定玩家信息
 
 ```
-GET /api/v1/player?name=PlayerName
+GET /api/v2/player?name=PlayerName
 ```
 
 ```json
@@ -395,34 +400,36 @@ python test/test_api.py --host localhost --port 60202 --token your-secret-token
 # 远程服务器
 python test/test_api.py --host 91.whzz.online --port 60202
 
-# 管理接口测试会修改测试玩家的绑定和 BDS 白名单，必须显式开启并使用专用玩家名
+# 管理接口测试会删除目标玩家原绑定，并在结束时保持未绑定，必须显式开启
 python test/test_api.py --host localhost --port 60202 \
   --run-admin-tests --admin-token your-admin-token --admin-player ApiTestPlayer
 ```
-默认测试会检查 overview、历史分页、玩家统计等只读端点并汇总结果。命令执行与四个白名单 POST 接口只有在提供 `--run-admin-tests`、`--admin-token` 和 `--admin-player` 时才会执行。
+默认测试会检查 8 个只读 API v2 路由和根路径。提供 `--player` 后会增加在线玩家详情与历史统计；再提供 `--run-admin-tests`、`--admin-token` 和 `--admin-player` 后，会覆盖命令、绑定统计以及 bind、unbind、state、add、remove 全部管理路由。脚本分别汇总测试用例数和 17 个 API v2 唯一路由的覆盖数，根路径 `GET /` 另计。
 
-`PlayerDataStore` 的统计、分页、绑定冲突、管理员授权、XUID 回填、原子保存、备份恢复和双文件损坏由 GTest 覆盖；GitHub Actions 在构建 DLL 后自动运行 `serverinfo-rest-tests`。这些自动化测试不连接真实 BDS 或 QQ，真实服务器与机器人适配器仍需按部署环境进行端到端验收。
+管理流程会先删除 `--admin-player` 的已有绑定，再依次验证普通绑定与解绑、绑定账号统计、管理员代绑、`force=true` 双冲突替换、状态查询和最终清理。远程命令功能关闭时，符合配置的 `403` 响应也判定为接口语义通过，但不会声称命令已经执行。
+
+`test/unit/` 中的 GTest 覆盖 `PlayerDataStore` 统计、分页、一对一绑定冲突、双冲突强制替换、XUID 回填、v2 数据格式、原子保存、备份恢复、双文件损坏和 Token 选择；GitHub Actions 在构建 DLL 后自动运行 `serverinfo-rest-tests`。这些自动化测试不连接真实 BDS 或 QQ，真实服务器与机器人适配器仍需按部署环境进行端到端验收。
 
 ### ⚡ 使用 cURL
 
 ```bash
 # 获取服务器状态
-curl http://localhost:60202/api/v1/status
+curl http://localhost:60202/api/v2/status
 # 获取玩家列表
-curl http://localhost:60202/api/v1/players
+curl http://localhost:60202/api/v2/players
 # 获取玩家名列表
-curl http://localhost:60202/api/v1/players/names
+curl http://localhost:60202/api/v2/players/names
 # 获取指定玩家信息
-curl "http://localhost:60202/api/v1/player?name=Steve"
+curl "http://localhost:60202/api/v2/player?name=Steve"
 # 健康检查
-curl http://localhost:60202/api/v1/health
+curl http://localhost:60202/api/v2/health
 ```
 
 ### 🌐 使用 JavaScript
 
 ```javascript
 // 获取玩家列表
-fetch('http://your-server:60202/api/v1/players')
+fetch('http://your-server:60202/api/v2/players')
     .then(res => res.json())
     .then(data => console.log(data.players));
 ```

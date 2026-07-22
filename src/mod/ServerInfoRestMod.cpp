@@ -1,5 +1,4 @@
 #include "mod/ServerInfoRestMod.h"
-#include "mod/ConfigMigration.h"
 #include "mod/ExecCommandNative.h"
 #include "mod/HttpServer.h"
 #include "mod/PlayerDataStore.h"
@@ -32,11 +31,12 @@
 #include <limits>
 #include <sstream>
 #include <string_view>
+#include <unordered_set>
 
 namespace serverinfo_rest {
 
 namespace {
-constexpr auto PluginVersion = "0.2.9-alpha.17";
+constexpr auto PluginVersion = "0.3.0-alpha.19";
 
 int hexValue(char ch) {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -209,6 +209,81 @@ nlohmann::json bindingJson(const WhitelistBinding& binding) {
         {"xuid", binding.xuid},
         {"boundAtMs", binding.boundAtMs}
     };
+}
+
+bool samePlayerName(const std::string& left, const std::string& right) {
+    if (left.size() != right.size()) return false;
+    return std::equal(left.begin(), left.end(), right.begin(), [](unsigned char lhs, unsigned char rhs) {
+        return std::tolower(lhs) == std::tolower(rhs);
+    });
+}
+
+void respondWithBindingUpdate(
+    const BindingResult& result,
+    int commandTimeoutMs,
+    int commandOutputLimit,
+    HttpResponse& response
+) {
+    nlohmann::json json;
+    json["success"] = true;
+    json["created"] = result.created;
+    json["forced"] = result.forced;
+    json["binding"] = bindingJson(result.binding);
+    json["replacedBindings"] = nlohmann::json::array();
+    for (const auto& replaced : result.replacedBindings) {
+        auto item = bindingJson(replaced);
+        const auto sameUser = replaced.platform == result.binding.platform
+            && replaced.selfId == result.binding.selfId
+            && replaced.userId == result.binding.userId;
+        item["reason"] = sameUser ? "target_user_was_bound" : "target_player_was_bound";
+        json["replacedBindings"].push_back(std::move(item));
+    }
+
+    bool allSucceeded = true;
+    bool anyTimedOut = false;
+    std::string combinedOutput;
+    json["allowlistOperations"] = nlohmann::json::array();
+    auto runAllowlistCommand = [&](const std::string& operation, const std::string& playerName) {
+        const auto command = executeCommandOnServerThread(
+            "allowlist " + operation + " \"" + playerName + "\"",
+            commandTimeoutMs
+        );
+        allSucceeded = allSucceeded && command.success;
+        anyTimedOut = anyTimedOut || command.timedOut;
+        if (!combinedOutput.empty()) combinedOutput += '\n';
+        combinedOutput += operation + " " + playerName + ": " + command.output;
+        json["allowlistOperations"].push_back({
+            {"operation", operation},
+            {"playerName", playerName},
+            {"success", command.success},
+            {"timedOut", command.timedOut},
+            {"output", command.output}
+        });
+    };
+
+    runAllowlistCommand("add", result.binding.playerName);
+    std::unordered_set<std::string> removedPlayers;
+    for (const auto& replaced : result.replacedBindings) {
+        if (samePlayerName(replaced.playerName, result.binding.playerName)) continue;
+        auto key = replaced.playerName;
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+        if (removedPlayers.insert(key).second) runAllowlistCommand("remove", replaced.playerName);
+    }
+
+    json["allowlistUpdated"] = allSucceeded;
+    json["commandOutput"] = truncateUtf8(
+        std::move(combinedOutput),
+        static_cast<std::size_t>(std::clamp(commandOutputLimit, 256, 32000))
+    );
+    if (anyTimedOut) {
+        json["warning"] = "Binding was stored, but an allowlist command timed out";
+        response.setStatus(504, "Gateway Timeout");
+    } else if (!allSucceeded) {
+        json["warning"] = "Binding was stored, but an allowlist command reported a failure";
+    }
+    response.setJson(json.dump());
 }
 } // namespace
 
@@ -385,23 +460,19 @@ bool ServerInfoRestMod::load() {
 
     // 读取配置文件
     const auto& configFilePath = getSelf().getConfigDir() / "config.json";
-    bool migratedLegacyConfig = false;
-    if (!ll::config::loadConfig(
-            mConfig,
-            configFilePath,
-            [&migratedLegacyConfig](Config& config, nlohmann::ordered_json& data) {
-                migratedLegacyConfig = migrateConfigV4ToV5(data);
-                return ll::config::defaultConfigUpdater(config, data);
-            }
-        )) {
-        logger.info("Configuration is new or requires migration: {}", configFilePath.string());
-        if (migratedLegacyConfig) {
-            logger.info("Migrated whitelist configuration from v4 to v5");
-        }
-        logger.info("Saving normalized configurations...");
+    if (!ll::config::loadConfig(mConfig, configFilePath)) {
+        logger.info("Configuration is new or invalid: {}", configFilePath.string());
+        logger.info("Saving default v6 configuration...");
         if (!ll::config::saveConfig(mConfig, configFilePath)) {
             logger.error("Failed to save default configurations!");
         }
+    }
+    if (mConfig.version != 6) {
+        logger.error(
+            "Unsupported configuration version {}. API v2 requires a fresh version 6 configuration",
+            mConfig.version
+        );
+        return false;
     }
     auto normalizeTokenMode = [&logger](
                                   std::string& configured,
@@ -499,7 +570,7 @@ bool ServerInfoRestMod::enable() {
         && mPlayerDataStore
         && mPlayerDataStore->isAvailable()) {
         const auto authorizedNames = mPlayerDataStore->authorizedPlayerNames();
-        logger.info("[Whitelist] Reconciling {} stored authorization(s) with the BDS allowlist", authorizedNames.size());
+        logger.info("[Whitelist] Reconciling {} stored binding(s) with the BDS allowlist", authorizedNames.size());
         for (const auto& playerName : authorizedNames) {
             if (!validPlayerName(playerName)) {
                 logger.warn("[Whitelist] Skipping invalid stored player name during startup reconcile");
@@ -543,7 +614,7 @@ bool ServerInfoRestMod::enable() {
                 player.getRealName(),
                 player.getXuid()
             );
-            player.Player::disconnect("请先在群内使用绑定白名单指令绑定 Xbox 玩家名");
+            player.Player::disconnect("请先在群内使用绑定玩家指令绑定 Xbox 玩家名");
             event.cancel();
         },
         ll::event::EventPriority::Highest
@@ -708,7 +779,7 @@ bool ServerInfoRestMod::enable() {
 
     // ==================== 注册 API 路由 ====================
 
-    // GET /api/v1/status - 服务器状态
+    // GET /api/v2/status - 服务器状态
     mHttpServer->get(prefix + "/status", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /status endpoint called");
         if (!validateToken(req, res)) return;
@@ -725,7 +796,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/players - 获取玩家列表
+    // GET /api/v2/players - 获取玩家列表
     mHttpServer->get(prefix + "/players", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /players endpoint called");
         if (!validateToken(req, res)) return;
@@ -749,7 +820,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/players/count - 获取玩家数量
+    // GET /api/v2/players/count - 获取玩家数量
     mHttpServer->get(prefix + "/players/count", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /players/count endpoint called");
         if (!validateToken(req, res)) return;
@@ -762,7 +833,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/players/names - 获取玩家名列表
+    // GET /api/v2/players/names - 获取玩家名列表
     mHttpServer->get(prefix + "/players/names", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /players/names endpoint called");
         if (!validateToken(req, res)) return;
@@ -780,8 +851,8 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/player/{name} - 获取指定玩家信息
-    // 由于简单的路由系统不支持参数，我们使用 query string: /api/v1/player?name=xxx&token=xxx
+    // GET /api/v2/player/{name} - 获取指定玩家信息
+    // 由于简单的路由系统不支持参数，我们使用 query string: /api/v2/player?name=xxx&token=xxx
     mHttpServer->get(prefix + "/player", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         if (!validateToken(req, res)) return;
         
@@ -819,7 +890,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/server - 服务器信息
+    // GET /api/v2/server - 服务器信息
     mHttpServer->get(prefix + "/server", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /server endpoint called");
         if (!validateToken(req, res)) return;
@@ -839,7 +910,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/overview - 一次返回查在线所需的同一时刻快照
+    // GET /api/v2/overview - 一次返回查在线所需的同一时刻快照
     mHttpServer->get(prefix + "/overview", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         if (!validateToken(req, res)) return;
 
@@ -877,7 +948,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/players/history - 历史玩家分页列表
+    // GET /api/v2/players/history - 历史玩家分页列表
     mHttpServer->get(prefix + "/players/history", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         if (!validateToken(req, res)) return;
         if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
@@ -905,7 +976,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/players/stats?name=<name-or-xuid> - 历史玩家统计
+    // GET /api/v2/players/stats?name=<name-or-xuid> - 历史玩家统计
     mHttpServer->get(prefix + "/players/stats", [this, validateToken](const HttpRequest& req, HttpResponse& res) {
         if (!validateToken(req, res)) return;
         if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
@@ -928,7 +999,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(playerRecordJson(*player).dump());
     });
 
-    // POST /api/v1/players/stats/bound - 根据聊天账号绑定查询历史玩家统计
+    // POST /api/v2/players/stats/bound - 根据聊天账号绑定查询历史玩家统计
     mHttpServer->post(prefix + "/players/stats/bound", [this, validateAdminToken, parseJsonBody](
         const HttpRequest& req,
         HttpResponse& res
@@ -976,7 +1047,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(playerRecordJson(*player).dump());
     });
 
-    // POST /api/v1/whitelist/bind - 一对一绑定聊天账号与玩家白名单
+    // POST /api/v2/whitelist/bind - 一对一绑定聊天账号与玩家白名单
     mHttpServer->post(prefix + "/whitelist/bind", [this, validateAdminToken, parseJsonBody](
         const HttpRequest& req,
         HttpResponse& res
@@ -1010,40 +1081,30 @@ bool ServerInfoRestMod::enable() {
             return;
         }
 
-        auto binding = mPlayerDataStore->bindWhitelist(platform, selfId, userId, channelId, playerName, unixTimeMs());
+        auto binding = mPlayerDataStore->bindWhitelist(
+            platform,
+            selfId,
+            userId,
+            channelId,
+            playerName,
+            unixTimeMs()
+        );
         if (!binding.success) {
             res.setStatus(409, "Conflict");
-            res.setJson(nlohmann::json{{"error", binding.error}}.dump());
+            res.setJson(nlohmann::json{{"code", "binding_conflict"}, {"error", binding.error}}.dump());
             return;
         }
         savePlayerData(true);
-
-        auto command = executeCommandOnServerThread("allowlist add \"" + binding.binding.playerName + "\"", mConfig.commandTimeoutMs);
-        nlohmann::json json;
-        json["success"] = true;
-        json["created"] = binding.created;
-        json["binding"] = bindingJson(binding.binding);
-        json["allowlistUpdated"] = command.success;
-        json["commandOutput"] = truncateUtf8(
-            command.output,
-            static_cast<std::size_t>(std::clamp(mConfig.commandOutputLimit, 256, 32000))
-        );
-        if (command.timedOut) {
-            json["warning"] = "Binding was stored, but the allowlist command timed out";
-            res.setStatus(504, "Gateway Timeout");
-        } else if (!command.success) {
-            json["warning"] = "Binding was stored, but the allowlist command reported a failure";
-        }
         getSelf().getLogger().info(
             "[Whitelist] {}:{} bound to {}",
             binding.binding.platform,
             binding.binding.userId,
             binding.binding.playerName
         );
-        res.setJson(json.dump());
+        respondWithBindingUpdate(binding, mConfig.commandTimeoutMs, mConfig.commandOutputLimit, res);
     });
 
-    // POST /api/v1/whitelist/unbind - 解除当前聊天账号绑定
+    // POST /api/v2/whitelist/unbind - 解除当前聊天账号绑定
     mHttpServer->post(prefix + "/whitelist/unbind", [this, validateAdminToken, parseJsonBody](
         const HttpRequest& req,
         HttpResponse& res
@@ -1081,25 +1142,64 @@ bool ServerInfoRestMod::enable() {
             res.setJson("{\"error\": \"Whitelist binding not found\"}");
             return;
         }
-        const auto allowlistRetained = mPlayerDataStore->hasWhitelistAuthorization(binding->playerName);
         savePlayerData(true);
-        auto command = allowlistRetained
-            ? CommandExecutionResult{true, false, "allowlist retained because another authorization remains"}
-            : executeCommandOnServerThread("allowlist remove \"" + binding->playerName + "\"", mConfig.commandTimeoutMs);
+        auto command = executeCommandOnServerThread(
+            "allowlist remove \"" + binding->playerName + "\"",
+            mConfig.commandTimeoutMs
+        );
         nlohmann::json json;
         json["success"] = true;
         json["binding"] = bindingJson(*binding);
-        json["allowlistRetained"] = allowlistRetained;
         json["allowlistUpdated"] = command.success;
         json["commandOutput"] = truncateUtf8(
             command.output,
             static_cast<std::size_t>(std::clamp(mConfig.commandOutputLimit, 256, 32000))
         );
-        if (command.timedOut) json["warning"] = "Binding was removed, but the allowlist command timed out";
+        if (command.timedOut) {
+            json["warning"] = "Binding was removed, but the allowlist command timed out";
+            res.setStatus(504, "Gateway Timeout");
+        } else if (!command.success) {
+            json["warning"] = "Binding was removed, but the allowlist command reported a failure";
+        }
         res.setJson(json.dump());
     });
 
-    // POST /api/v1/whitelist/add - 管理员直接授权玩家白名单
+    // POST /api/v2/whitelist/state - 管理员按玩家名查询唯一绑定状态
+    mHttpServer->post(prefix + "/whitelist/state", [this, validateAdminToken, parseJsonBody](
+        const HttpRequest& req,
+        HttpResponse& res
+    ) {
+        if (!validateAdminToken(req, res)) return;
+        if (!mConfig.enableWhitelistManagementApiEndpoints) {
+            res.setStatus(403, "Forbidden");
+            res.setJson("{\"error\": \"Whitelist management API endpoints are disabled\"}");
+            return;
+        }
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
+            res.setStatus(503, "Service Unavailable");
+            res.setJson("{\"error\": \"Player data store is unavailable\"}");
+            return;
+        }
+        auto body = parseJsonBody(req, res);
+        if (!body) return;
+        const auto playerIt = body->find("playerName");
+        if (playerIt == body->end() || !playerIt->is_string() || !validPlayerName(playerIt->get<std::string>())) {
+            res.setStatus(400, "Bad Request");
+            res.setJson("{\"error\": \"a valid playerName is required\"}");
+            return;
+        }
+        const auto playerName = playerIt->get<std::string>();
+        const auto binding = mPlayerDataStore->findWhitelistBindingByPlayer(playerName);
+        nlohmann::json json{
+            {"success", true},
+            {"playerName", binding ? binding->playerName : playerName},
+            {"bound", binding.has_value()},
+            {"binding", binding ? bindingJson(*binding) : nlohmann::json(nullptr)}
+        };
+        res.setJson(json.dump());
+    });
+
+    // POST /api/v2/whitelist/add - 管理员为指定聊天用户创建玩家绑定
     mHttpServer->post(prefix + "/whitelist/add", [this, validateAdminToken, parseJsonBody](
         const HttpRequest& req,
         HttpResponse& res
@@ -1117,39 +1217,59 @@ bool ServerInfoRestMod::enable() {
         }
         auto body = parseJsonBody(req, res);
         if (!body) return;
-        auto playerIt = body->find("playerName");
-        if (playerIt == body->end() || !playerIt->is_string() || !validPlayerName(playerIt->get<std::string>())) {
+        auto stringField = [&](const char* key) {
+            const auto it = body->find(key);
+            return it != body->end() && it->is_string() ? it->get<std::string>() : std::string{};
+        };
+        const auto platform = stringField("platform");
+        const auto selfId = stringField("selfId");
+        const auto userId = stringField("userId");
+        const auto channelId = stringField("channelId");
+        const auto playerName = stringField("playerName");
+        if (platform.empty() || selfId.empty() || userId.empty() || !validPlayerName(playerName)) {
             res.setStatus(400, "Bad Request");
-            res.setJson("{\"error\": \"a valid playerName is required\"}");
+            res.setJson("{\"error\": \"platform, selfId, userId and a valid playerName are required\"}");
             return;
         }
-        auto requesterIt = body->find("requester");
-        auto requester = requesterIt != body->end() && requesterIt->is_string()
+        const auto forceIt = body->find("force");
+        if (forceIt != body->end() && !forceIt->is_boolean()) {
+            res.setStatus(400, "Bad Request");
+            res.setJson("{\"error\": \"force must be a boolean\"}");
+            return;
+        }
+        const auto force = forceIt != body->end() && forceIt->get<bool>();
+        const auto requesterIt = body->find("requester");
+        const auto requester = requesterIt != body->end() && requesterIt->is_string()
             ? requesterIt->get<std::string>()
             : std::string{"unknown"};
-        auto [grant, created] = mPlayerDataStore->addAdminWhitelist(
-            playerIt->get<std::string>(),
-            requester,
-            unixTimeMs()
+        auto binding = mPlayerDataStore->bindWhitelist(
+            platform,
+            selfId,
+            userId,
+            channelId,
+            playerName,
+            unixTimeMs(),
+            force
         );
+        if (!binding.success) {
+            res.setStatus(409, "Conflict");
+            res.setJson(nlohmann::json{{"code", "binding_conflict"}, {"error", binding.error}}.dump());
+            return;
+        }
         savePlayerData(true);
-        auto command = executeCommandOnServerThread("allowlist add \"" + grant.playerName + "\"", mConfig.commandTimeoutMs);
-        nlohmann::json json;
-        json["success"] = true;
-        json["created"] = created;
-        json["playerName"] = grant.playerName;
-        json["allowlistUpdated"] = command.success;
-        json["commandOutput"] = truncateUtf8(
-            command.output,
-            static_cast<std::size_t>(std::clamp(mConfig.commandOutputLimit, 256, 32000))
+        getSelf().getLogger().info(
+            "[Whitelist] Admin {} bound {}:{} to {} (force={}, replaced={})",
+            requester,
+            binding.binding.platform,
+            binding.binding.userId,
+            binding.binding.playerName,
+            force,
+            binding.replacedBindings.size()
         );
-        if (command.timedOut) json["warning"] = "Admin grant was stored, but the allowlist command timed out";
-        else if (!command.success) json["warning"] = "Admin grant was stored, but the allowlist command reported a failure";
-        getSelf().getLogger().info("[Whitelist] Admin {} added {}", requester, grant.playerName);
-        res.setJson(json.dump());
+        respondWithBindingUpdate(binding, mConfig.commandTimeoutMs, mConfig.commandOutputLimit, res);
     });
 
-    // POST /api/v1/whitelist/remove - 管理员移除玩家白名单及现有绑定
+    // POST /api/v2/whitelist/remove - 管理员按玩家名移除唯一绑定
     mHttpServer->post(prefix + "/whitelist/remove", [this, validateAdminToken, parseJsonBody](
         const HttpRequest& req,
         HttpResponse& res
@@ -1178,24 +1298,38 @@ bool ServerInfoRestMod::enable() {
         auto requester = requesterIt != body->end() && requesterIt->is_string()
             ? requesterIt->get<std::string>()
             : std::string{"unknown"};
-        auto recordRemoved = mPlayerDataStore->revokePlayerWhitelist(playerName);
+        auto binding = mPlayerDataStore->removeWhitelistBinding(playerName);
+        if (!binding) {
+            res.setStatus(404, "Not Found");
+            res.setJson("{\"code\": \"binding_not_found\", \"error\": \"Player binding not found\"}");
+            return;
+        }
         savePlayerData(true);
-        auto command = executeCommandOnServerThread("allowlist remove \"" + playerName + "\"", mConfig.commandTimeoutMs);
+        auto command = executeCommandOnServerThread(
+            "allowlist remove \"" + binding->playerName + "\"",
+            mConfig.commandTimeoutMs
+        );
         nlohmann::json json;
         json["success"] = true;
-        json["playerName"] = playerName;
-        json["recordRemoved"] = recordRemoved;
+        json["playerName"] = binding->playerName;
+        json["binding"] = bindingJson(*binding);
+        json["recordRemoved"] = true;
         json["allowlistUpdated"] = command.success;
         json["commandOutput"] = truncateUtf8(
             command.output,
             static_cast<std::size_t>(std::clamp(mConfig.commandOutputLimit, 256, 32000))
         );
-        if (command.timedOut) json["warning"] = "Local authorization was removed, but the allowlist command timed out";
-        getSelf().getLogger().info("[Whitelist] Admin {} removed {}", requester, playerName);
+        if (command.timedOut) {
+            json["warning"] = "Binding was removed, but the allowlist command timed out";
+            res.setStatus(504, "Gateway Timeout");
+        } else if (!command.success) {
+            json["warning"] = "Binding was removed, but the allowlist command reported a failure";
+        }
+        getSelf().getLogger().info("[Whitelist] Admin {} removed binding for {}", requester, binding->playerName);
         res.setJson(json.dump());
     });
 
-    // POST /api/v1/admin/command - 受控执行 BDS 管理命令
+    // POST /api/v2/admin/command - 受控执行 BDS 管理命令
     mHttpServer->post(prefix + "/admin/command", [this, validateAdminToken, parseJsonBody](
         const HttpRequest& req,
         HttpResponse& res
@@ -1245,7 +1379,7 @@ bool ServerInfoRestMod::enable() {
         res.setJson(json.dump());
     });
 
-    // GET /api/v1/health - 健康检查端点 (不需要 token，用于监控)
+    // GET /api/v2/health - 健康检查端点 (不需要 token，用于监控)
     mHttpServer->get(prefix + "/health", [this](const HttpRequest&, HttpResponse& res) {
         getSelf().getLogger().trace("[API] /health endpoint called");
         nlohmann::json json;
@@ -1285,8 +1419,9 @@ bool ServerInfoRestMod::enable() {
             {"POST " + prefix + "/players/stats/bound", "Get player statistics for a bound chat account"},
             {"POST " + prefix + "/whitelist/bind", "Bind a chat account to the BDS allowlist"},
             {"POST " + prefix + "/whitelist/unbind", "Remove a chat account allowlist binding"},
-            {"POST " + prefix + "/whitelist/add", "Add an administrator-managed allowlist grant"},
-            {"POST " + prefix + "/whitelist/remove", "Remove a player allowlist grant and binding"},
+            {"POST " + prefix + "/whitelist/state", "Get the binding state for a player"},
+            {"POST " + prefix + "/whitelist/add", "Create a player binding for a specified chat user"},
+            {"POST " + prefix + "/whitelist/remove", "Remove the binding for a player"},
             {"POST " + prefix + "/admin/command", "Execute an authorized BDS command"}
         };
         res.setJson(json.dump(2));

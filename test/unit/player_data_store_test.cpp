@@ -1,6 +1,7 @@
 #include "mod/PlayerDataStore.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -59,7 +60,7 @@ TEST_F(PlayerDataStoreTest, TracksPlayTimeStatisticsAndPagination) {
     EXPECT_EQ(page.players.front().totalPlayMs, 1000);
 }
 
-TEST_F(PlayerDataStoreTest, EnforcesBindingOwnershipAndKeepsAdminGrantOnUnbind) {
+TEST_F(PlayerDataStoreTest, EnforcesOwnershipAndAtomicallyReplacesBothForceConflicts) {
     PlayerDataStore store(dataPath);
     std::string error;
     ASSERT_TRUE(store.load(error)) << error;
@@ -67,20 +68,57 @@ TEST_F(PlayerDataStoreTest, EnforcesBindingOwnershipAndKeepsAdminGrantOnUnbind) 
     const auto first = store.bindWhitelist("qq", "bot-1", "user-1", "group-1", "Alice", 1000);
     ASSERT_TRUE(first.success);
     EXPECT_TRUE(first.created);
+    ASSERT_TRUE(store.bindWhitelist("qq", "bot-1", "user-2", "group-1", "Bob", 1001).success);
+    EXPECT_TRUE(store.authorizePlayer("Alice", "xuid-1", false, false));
+    EXPECT_TRUE(store.authorizePlayer("Bob", "xuid-2", false, false));
     const auto binding = store.findWhitelistBinding("QQ", "bot-1", "user-1");
     ASSERT_TRUE(binding.has_value());
     EXPECT_EQ(binding->playerName, "Alice");
-    EXPECT_FALSE(store.bindWhitelist("qq", "bot-1", "user-2", "group-1", "alice", 1001).success);
-    EXPECT_FALSE(store.bindWhitelist("qq", "bot-1", "user-1", "group-1", "Bob", 1002).success);
+    EXPECT_FALSE(store.bindWhitelist("qq", "bot-1", "user-2", "group-1", "alice", 1002).success);
+    EXPECT_FALSE(store.bindWhitelist("qq", "bot-1", "user-1", "group-1", "Bob", 1003).success);
 
-    const auto [grant, created] = store.addAdminWhitelist("Alice", "admin", 1003);
-    EXPECT_TRUE(created);
-    EXPECT_EQ(grant.playerName, "Alice");
-    ASSERT_TRUE(store.unbindWhitelist("qq", "bot-1", "user-1").has_value());
-    EXPECT_FALSE(store.findWhitelistBinding("qq", "bot-1", "user-1").has_value());
-    EXPECT_TRUE(store.hasWhitelistAuthorization("Alice"));
-    EXPECT_TRUE(store.authorizePlayer("Alice", "xuid-1", false, false));
-    EXPECT_TRUE(store.authorizePlayer("RenamedAlice", "xuid-1", false, false));
+    const auto forced = store.bindWhitelist("qq", "bot-1", "user-1", "group-2", "Bob", 1004, true);
+    ASSERT_TRUE(forced.success);
+    EXPECT_TRUE(forced.created);
+    EXPECT_TRUE(forced.forced);
+    ASSERT_EQ(forced.replacedBindings.size(), 2u);
+    ASSERT_TRUE(store.findWhitelistBinding("qq", "bot-1", "user-1").has_value());
+    EXPECT_FALSE(store.findWhitelistBinding("qq", "bot-1", "user-2").has_value());
+    EXPECT_FALSE(store.findWhitelistBindingByPlayer("Alice").has_value());
+    const auto forcedPlayer = store.findWhitelistBindingByPlayer("bob");
+    ASSERT_TRUE(forcedPlayer.has_value());
+    EXPECT_EQ(forcedPlayer->xuid, "xuid-2");
+    EXPECT_FALSE(store.authorizePlayer("Alice", "xuid-1", false, false));
+    EXPECT_TRUE(store.authorizePlayer("Bob", "xuid-2", false, false));
+
+    const auto removed = store.removeWhitelistBinding("BOB");
+    ASSERT_TRUE(removed.has_value());
+    EXPECT_EQ(removed->playerName, "Bob");
+    EXPECT_FALSE(store.findWhitelistBindingByPlayer("Bob").has_value());
+}
+
+TEST_F(PlayerDataStoreTest, PersistsOnlyTheVersionTwoBindingSchema) {
+    PlayerDataStore store(dataPath);
+    std::string error;
+    ASSERT_TRUE(store.load(error)) << error;
+    ASSERT_TRUE(store.bindWhitelist("qq", "bot-1", "user-1", "group-1", "Alice", 1000).success);
+    ASSERT_TRUE(store.save(error, true)) << error;
+
+    std::ifstream stream(dataPath, std::ios::binary);
+    const auto json = nlohmann::json::parse(stream);
+    EXPECT_EQ(json.at("version"), 2);
+    ASSERT_TRUE(json.at("bindings").is_array());
+    EXPECT_EQ(json.at("bindings").size(), 1u);
+    EXPECT_FALSE(json.contains("adminWhitelist"));
+}
+
+TEST_F(PlayerDataStoreTest, RejectsVersionOneDataWithoutMigration) {
+    write(dataPath, R"({"version":1,"players":[],"bindings":[],"adminWhitelist":[]})");
+    PlayerDataStore store(dataPath);
+    std::string error;
+    EXPECT_FALSE(store.load(error));
+    EXPECT_FALSE(store.isAvailable());
+    EXPECT_NE(error.find("unsupported or missing data version"), std::string::npos);
 }
 
 TEST_F(PlayerDataStoreTest, SavesAtomicallyAndRecoversLastBackup) {
