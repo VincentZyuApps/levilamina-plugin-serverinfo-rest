@@ -579,6 +579,20 @@ BindingResult PlayerDataStore::bindWhitelist(
     return result;
 }
 
+std::optional<WhitelistBinding> PlayerDataStore::findWhitelistBinding(
+    const std::string& platform,
+    const std::string& selfId,
+    const std::string& userId
+) const {
+    const auto wanted = bindingKey(platform, selfId, userId);
+    std::lock_guard<std::mutex> lock(mMutex);
+    const auto it = std::find_if(mBindings.begin(), mBindings.end(), [&](const auto& binding) {
+        return bindingKey(binding.platform, binding.selfId, binding.userId) == wanted;
+    });
+    if (it == mBindings.end()) return std::nullopt;
+    return *it;
+}
+
 std::optional<WhitelistBinding> PlayerDataStore::unbindWhitelist(
     const std::string& platform,
     const std::string& selfId,

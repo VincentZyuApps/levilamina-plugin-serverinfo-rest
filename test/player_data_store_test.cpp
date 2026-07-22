@@ -67,6 +67,9 @@ TEST_F(PlayerDataStoreTest, EnforcesBindingOwnershipAndKeepsAdminGrantOnUnbind) 
     const auto first = store.bindWhitelist("qq", "bot-1", "user-1", "group-1", "Alice", 1000);
     ASSERT_TRUE(first.success);
     EXPECT_TRUE(first.created);
+    const auto binding = store.findWhitelistBinding("QQ", "bot-1", "user-1");
+    ASSERT_TRUE(binding.has_value());
+    EXPECT_EQ(binding->playerName, "Alice");
     EXPECT_FALSE(store.bindWhitelist("qq", "bot-1", "user-2", "group-1", "alice", 1001).success);
     EXPECT_FALSE(store.bindWhitelist("qq", "bot-1", "user-1", "group-1", "Bob", 1002).success);
 
@@ -74,6 +77,7 @@ TEST_F(PlayerDataStoreTest, EnforcesBindingOwnershipAndKeepsAdminGrantOnUnbind) 
     EXPECT_TRUE(created);
     EXPECT_EQ(grant.playerName, "Alice");
     ASSERT_TRUE(store.unbindWhitelist("qq", "bot-1", "user-1").has_value());
+    EXPECT_FALSE(store.findWhitelistBinding("qq", "bot-1", "user-1").has_value());
     EXPECT_TRUE(store.hasWhitelistAuthorization("Alice"));
     EXPECT_TRUE(store.authorizePlayer("Alice", "xuid-1", false, false));
     EXPECT_TRUE(store.authorizePlayer("RenamedAlice", "xuid-1", false, false));

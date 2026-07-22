@@ -36,7 +36,7 @@
 namespace serverinfo_rest {
 
 namespace {
-constexpr auto PluginVersion = "0.2.8-alpha.16";
+constexpr auto PluginVersion = "0.2.9-alpha.17";
 
 int hexValue(char ch) {
     if (ch >= '0' && ch <= '9') return ch - '0';
@@ -928,6 +928,54 @@ bool ServerInfoRestMod::enable() {
         res.setJson(playerRecordJson(*player).dump());
     });
 
+    // POST /api/v1/players/stats/bound - 根据聊天账号绑定查询历史玩家统计
+    mHttpServer->post(prefix + "/players/stats/bound", [this, validateAdminToken, parseJsonBody](
+        const HttpRequest& req,
+        HttpResponse& res
+    ) {
+        if (!validateAdminToken(req, res)) return;
+        if (!mPlayerDataStore || !mPlayerDataStore->isAvailable()) {
+            res.setStatus(503, "Service Unavailable");
+            res.setJson("{\"error\": \"Player data store is unavailable\"}");
+            return;
+        }
+
+        auto body = parseJsonBody(req, res);
+        if (!body) return;
+        auto stringField = [&](const char* key) {
+            const auto it = body->find(key);
+            return it != body->end() && it->is_string() ? it->get<std::string>() : std::string{};
+        };
+        const auto platform = stringField("platform");
+        const auto selfId = stringField("selfId");
+        const auto userId = stringField("userId");
+        if (platform.empty() || selfId.empty() || userId.empty()) {
+            res.setStatus(400, "Bad Request");
+            res.setJson("{\"error\": \"platform, selfId and userId are required\"}");
+            return;
+        }
+
+        const auto binding = mPlayerDataStore->findWhitelistBinding(platform, selfId, userId);
+        if (!binding) {
+            res.setStatus(404, "Not Found");
+            res.setJson("{\"code\": \"binding_not_found\", \"error\": \"Chat account is not bound to a player\"}");
+            return;
+        }
+
+        const auto lookup = binding->xuid.empty() ? binding->playerName : binding->xuid;
+        const auto player = mPlayerDataStore->findPlayer(lookup, unixTimeMs());
+        if (!player) {
+            res.setStatus(404, "Not Found");
+            res.setJson(nlohmann::json{
+                {"code", "bound_player_stats_not_found"},
+                {"error", "Bound player statistics not found"},
+                {"playerName", binding->playerName}
+            }.dump());
+            return;
+        }
+        res.setJson(playerRecordJson(*player).dump());
+    });
+
     // POST /api/v1/whitelist/bind - 一对一绑定聊天账号与玩家白名单
     mHttpServer->post(prefix + "/whitelist/bind", [this, validateAdminToken, parseJsonBody](
         const HttpRequest& req,
@@ -1234,6 +1282,7 @@ bool ServerInfoRestMod::enable() {
             {"GET " + prefix + "/player?name=<name>", "Get specific online player information"},
             {"GET " + prefix + "/players/history?page=<page>", "Get historical players"},
             {"GET " + prefix + "/players/stats?name=<name>", "Get historical player statistics"},
+            {"POST " + prefix + "/players/stats/bound", "Get player statistics for a bound chat account"},
             {"POST " + prefix + "/whitelist/bind", "Bind a chat account to the BDS allowlist"},
             {"POST " + prefix + "/whitelist/unbind", "Remove a chat account allowlist binding"},
             {"POST " + prefix + "/whitelist/add", "Add an administrator-managed allowlist grant"},

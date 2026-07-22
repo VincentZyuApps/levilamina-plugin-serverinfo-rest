@@ -87,6 +87,11 @@ public:
         const std::string& playerName,
         std::int64_t nowMs
     );
+    std::optional<WhitelistBinding> findWhitelistBinding(
+        const std::string& platform,
+        const std::string& selfId,
+        const std::string& userId
+    ) const;
     std::optional<WhitelistBinding> unbindWhitelist(
         const std::string& platform,
         const std::string& selfId,

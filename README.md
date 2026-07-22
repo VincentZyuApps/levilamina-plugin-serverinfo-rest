@@ -202,6 +202,8 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/
 
 四个白名单开关彼此独立：`enableWhitelistBindingApiEndpoints` 控制普通用户 bind/unbind，`enableWhitelistManagementApiEndpoints` 控制管理员 add/remove，`requireWhitelistAuthorizationOnJoin` 控制玩家进服拦截，`operatorBypassesWhitelistAuthorization` 只在进服授权检查启用时生效。若白天只想测试 API 而不影响玩家进服，可以保持两个接口开关为 `true`，并将 `requireWhitelistAuthorizationOnJoin` 设为 `false`。
 
+`POST /players/stats/bound` 只读取已有聊天账号绑定，不会修改 BDS 白名单，也不受 `enableWhitelistBindingApiEndpoints` 或 `requireWhitelistAuthorizationOnJoin` 影响。接口使用管理令牌，并通过 JSON 请求体接收聊天平台身份，避免将用户标识写入 URL。
+
 普通用户执行“解绑”只删除聊天账号绑定。如果同一玩家仍有管理员通过“添加白名单”建立的直接授权，BDS 白名单会保留；只有管理员“移除白名单”会同时删除该玩家的普通绑定、管理员授权和 BDS 白名单。绑定数据以本插件的 `player-data.json` 为唯一数据源。
 
 ---
@@ -223,6 +225,7 @@ curl -H "Authorization: Bearer your-secret-token" http://localhost:60202/api/v1/
 | 指定在线玩家 | `GET /api/v1/player?name=<玩家名>` | 指定在线玩家的身份、网络、语言、权限和坐标信息 | 根据配置决定 |
 | 历史玩家列表 | `GET /api/v1/players/history?page=<页码>&pageSize=<每页数量>` | 历史玩家分页、首次与最后出现时间、累计游玩时间、加入次数、挖掘数和击杀数 | 根据配置决定 |
 | 历史玩家统计 | `GET /api/v1/players/stats?name=<玩家名或XUID>` | 指定历史玩家的 XUID、UUID、累计游玩时间、加入次数、挖掘方块数和击杀生物数 | 根据配置决定 |
+| 绑定账号统计 | `POST /api/v1/players/stats/bound` | 根据 `platform`、`selfId`、`userId` 查询当前聊天账号绑定玩家的历史统计 | 管理令牌 |
 
 ---
 
