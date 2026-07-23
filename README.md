@@ -399,7 +399,7 @@ GET /api/v2/player?name=PlayerName
     "isSneaking": false,
     "isSprinting": false,
     "isMoving": false,
-    "isInWater": false,
+    "isSwimming": false,
     "isInLava": false,
     "isOnGround": true,
     "isOnFire": false,

@@ -84,7 +84,7 @@ struct PlayerSnapshot {
     bool isSneaking = false;
     bool isSprinting = false;
     bool isMoving = false;
-    bool isInWater = false;
+    bool isSwimming = false;
     bool isInLava = false;
     bool isOnGround = false;
     bool isOnFire = false;

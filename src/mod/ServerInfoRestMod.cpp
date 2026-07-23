@@ -197,7 +197,7 @@ PlayerSnapshot capturePlayerSnapshot(Player& player) {
     snapshot.isSneaking = player.isSneaking();
     snapshot.isSprinting = player.getStatusFlag(ActorFlags::Sprinting);
     snapshot.isMoving = player.getStatusFlag(ActorFlags::Moving);
-    snapshot.isInWater = player.isInWater();
+    snapshot.isSwimming = player.getStatusFlag(ActorFlags::Swimming);
     snapshot.isInLava = player.isInLava();
     snapshot.isOnGround = player.isOnGround();
     snapshot.isOnFire = player.isOnFire();

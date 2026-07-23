@@ -58,7 +58,7 @@ nlohmann::json playerSnapshotToJson(const PlayerSnapshot& snapshot) {
         {"isSneaking", snapshot.isSneaking},
         {"isSprinting", snapshot.isSprinting},
         {"isMoving", snapshot.isMoving},
-        {"isInWater", snapshot.isInWater},
+        {"isSwimming", snapshot.isSwimming},
         {"isInLava", snapshot.isInLava},
         {"isOnGround", snapshot.isOnGround},
         {"isOnFire", snapshot.isOnFire},

@@ -19,6 +19,7 @@ TEST(PlayerSnapshotTest, SerializesRichPlayerDetailsWithoutSensitiveConnectionId
     snapshot.gameMode = {6, "spectator"};
     snapshot.health = 18;
     snapshot.maxHealth = 20;
+    snapshot.isSwimming = true;
     snapshot.position = {1.5, 64.0, -2.5, 0};
     snapshot.blockPosition = {1, 64, -3, 0};
     snapshot.feetPosition = {1.5, 63.4, -2.5, 0};
@@ -32,6 +33,7 @@ TEST(PlayerSnapshotTest, SerializesRichPlayerDetailsWithoutSensitiveConnectionId
     EXPECT_EQ(json.at("uniqueId"), "42");
     EXPECT_EQ(json.at("gameMode").at("value"), 6);
     EXPECT_EQ(json.at("gameMode").at("name"), "spectator");
+    EXPECT_TRUE(json.at("isSwimming"));
     EXPECT_EQ(json.at("position").at("dimensionId"), 0);
     EXPECT_EQ(json.at("mainHand").at("typeName"), "minecraft:diamond_pickaxe");
     EXPECT_EQ(json.at("network").at("averagePingMs"), 15);
