@@ -65,6 +65,11 @@ target("serverinfo-rest-tests")
     set_languages("c++20")
     add_defines("NOMINMAX", "UNICODE")
     add_packages("gtest", "nlohmann_json")
-    add_files("test/unit/config_test.cpp", "test/unit/player_data_store_test.cpp", "test/unit/token_auth_test.cpp")
-    add_files("src/mod/PlayerDataStore.cpp", "src/mod/TokenAuth.cpp")
+    add_files(
+        "test/unit/config_test.cpp",
+        "test/unit/player_data_store_test.cpp",
+        "test/unit/player_snapshot_test.cpp",
+        "test/unit/token_auth_test.cpp"
+    )
+    add_files("src/mod/PlayerDataStore.cpp", "src/mod/PlayerSnapshot.cpp", "src/mod/TokenAuth.cpp")
     add_includedirs("src")

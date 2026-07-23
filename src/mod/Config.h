@@ -6,7 +6,7 @@
 namespace serverinfo_rest {
 
 struct Config {
-    int version = 6;
+    int version = 7;
 
     std::string _comment_logLevel = "📝🔍 日志级别：silent | fatal | error | warn | info | debug | trace";
     std::string logLevel = "info";
@@ -29,16 +29,13 @@ struct Config {
     std::string _comment_token = "🔑📖 只读查询令牌；enableToken=false 时可以留空，禁止与 adminToken 相同";
     std::string token = "";
 
-    std::string _comment_tokenReceiveMode =
-        "📥🔑 只读 token 接收方式：param | header | both；param 使用 URL query 参数 ?token=...";
+    std::string _comment_tokenReceiveMode = "📥🔑 只读 token 接收方式：param | header | both；param 使用 URL query 参数 ?token=...";
     std::string tokenReceiveMode = "both";
 
-    std::string _comment_adminToken =
-        "🛡️🔑 管理令牌；绑定、解绑、查询、添加、移除玩家绑定时必须填写，禁止与只读 token 相同";
+    std::string _comment_adminToken = "🛡️🔑 管理令牌；绑定、解绑、查询、添加、移除玩家绑定时必须填写，禁止与只读 token 相同";
     std::string adminToken = "";
 
-    std::string _comment_adminTokenReceiveMode =
-        "📥🛡️ 管理 token 接收方式：param | header | both；默认 header，避免高权限令牌进入 URL";
+    std::string _comment_adminTokenReceiveMode = "📥🛡️ 管理 token 接收方式：param | header | both；默认 header，避免高权限令牌进入 URL";
     std::string adminTokenReceiveMode = "header";
 
     std::string _comment_enableCommandExecution = "⚡🖥️ 是否开放远程 BDS 命令接口；白名单接口不受此开关影响";
@@ -59,21 +56,17 @@ struct Config {
     std::string _comment_enableWhitelistManagementApiEndpoints = "🛡️🌐 是否开放管理员代绑、查询与移除玩家绑定接口";
     bool enableWhitelistManagementApiEndpoints = true;
 
-    std::string _comment_requireWhitelistAuthorizationOnJoin =
-        "🚪🛡️ 玩家进服时是否要求已有聊天账号绑定";
-    bool requireWhitelistAuthorizationOnJoin = true;
+    std::string _comment_requireWhitelistAuthorizationOnJoin = "🚪🛡️ 玩家进服时是否校验聊天账号绑定；默认 false 不校验，但仍支持白名单绑定";
+    bool requireWhitelistAuthorizationOnJoin = false;
 
-    std::string _comment_operatorBypassesWhitelistAuthorization =
-        "👑🚪 OP 是否跳过进服授权检查；false 表示 OP 也必须获得授权";
+    std::string _comment_operatorBypassesWhitelistAuthorization = "👑🚪 OP 是否跳过进服授权检查；false 表示 OP 也必须获得授权";
     bool operatorBypassesWhitelistAuthorization = false;
 
-    std::string _comment_whitelistDataFailurePolicy =
-        "💾⚠️ 玩家数据与备份都损坏时的策略：fail-open 暂停拦截 | fail-closed 拒绝无法验证的玩家";
+    std::string _comment_whitelistDataFailurePolicy = "💾⚠️ 玩家数据与备份都损坏时的策略：fail-open 暂停拦截 | fail-closed 拒绝无法验证的玩家";
     std::string whitelistDataFailurePolicy = "fail-open";
 
-    std::string _comment_repairMissingAllowlistEntriesOnStartup =
-        "🛠️📋 启动时补齐插件记录中缺失的 BDS 白名单，不会删除 BDS 中的额外白名单";
-    bool repairMissingAllowlistEntriesOnStartup = true;
+    std::string _comment_syncBindingsToBdsAllowlist = "🔄📋 是否将账号绑定同步到 BDS allowlist；启用后绑定与解绑实时同步，并在启动时补全已有绑定";
+    bool syncBindingsToBdsAllowlist = false;
 
     std::string _comment_dataSaveIntervalSeconds = "💾⏱️ 玩家历史与统计数据自动保存周期，单位秒";
     int dataSaveIntervalSeconds = 60;

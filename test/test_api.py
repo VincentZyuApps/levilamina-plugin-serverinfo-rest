@@ -12,7 +12,7 @@
   👤 --player <name>               查询的在线/历史玩家名，默认: 不测试指定玩家接口
   🔑 --token <token>               只读 API 令牌，默认: 不发送
   🛡️ --admin-token <token>         管理 API 令牌，默认: 不发送
-  ⚠️ --run-admin-tests             运行会修改绑定与 BDS allowlist 的管理测试，默认: 关闭
+  ⚠️ --run-admin-tests             运行会修改绑定；服务端启用同步时也会修改 BDS allowlist，默认: 关闭
   🎮 --admin-player <name>         破坏性管理测试目标玩家，默认: 未设置；测试结束后保持未绑定
   ⌨️ --admin-command <command>     管理命令测试内容，默认: list
   ⏱️ --timeout <seconds>           单次请求超时，默认: 10
@@ -168,7 +168,16 @@ def valid_binding_response(
         return False
     if user_id is not None and binding.get("userId") != user_id:
         return False
-    return forced is None or data.get("forced") is forced
+    if forced is not None and data.get("forced") is not forced:
+        return False
+    sync_enabled = data.get("allowlistSyncEnabled")
+    updated = data.get("allowlistUpdated")
+    operations = data.get("allowlistOperations")
+    if not isinstance(sync_enabled, bool) or not isinstance(operations, list):
+        return False
+    if sync_enabled:
+        return isinstance(updated, bool) and len(operations) > 0
+    return updated is None and operations == [] and data.get("commandOutput") == ""
 
 
 def valid_state_response(
@@ -212,6 +221,29 @@ def valid_bound_stats_response(
     )
 
 
+def valid_player_detail_response(status: int, data: ResponseData) -> bool:
+    if not is_success(status, data) or not isinstance(data, dict):
+        return False
+    required = {
+        "name",
+        "xuid",
+        "uuid",
+        "uniqueId",
+        "permissionLevel",
+        "gameMode",
+        "health",
+        "maxHealth",
+        "position",
+        "device",
+        "snapshotAtMs",
+    }
+    sensitive = {"ipAndPort", "ip", "clientId", "serverAddress"}
+    serialized = json.dumps(data, ensure_ascii=False)
+    return required.issubset(data) and not sensitive.intersection(data) and not any(
+        f'"{field}"' in serialized for field in sensitive
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="🧪 serverinfo-rest API v2 测试脚本",
@@ -232,7 +264,7 @@ def main() -> int:
     parser.add_argument(
         "--run-admin-tests",
         action="store_true",
-        help="运行会修改绑定数据和 BDS allowlist 的管理测试",
+        help="运行会修改绑定数据；服务端启用同步时也会修改 BDS allowlist",
     )
     parser.add_argument(
         "--admin-player",
@@ -306,6 +338,7 @@ def main() -> int:
             "GET",
             "/player",
             query={"name": args.player},
+            validator=valid_player_detail_response,
         )
         run_case(
             f"历史统计: {args.player}",
