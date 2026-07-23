@@ -2,36 +2,46 @@
 """Synchronize the plugin version. Usage: python scripts/bump_version.py [--dry-run] <version>."""
 
 import argparse
-import json
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TOOTH = ROOT / "tooth.json"
-SEMVER = re.compile(
-    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+SEMVER_TOKEN = (
+    r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
+SEMVER = re.compile(rf"^{SEMVER_TOKEN}$")
 
 
 @dataclass(frozen=True)
 class Target:
     path: str
-    mode: str
+    pattern: str
     required: bool = False
-    pattern: str = ""
+
+
+@dataclass(frozen=True)
+class PlannedTarget:
+    path: Path
+    content: str
+    matched_count: int
+    changed_count: int
+    previous_versions: tuple[str, ...]
 
 
 TARGETS = (
-    Target("tooth.json", "tooth", required=True),
+    Target(
+        "tooth.json",
+        r'(?m)^(\s*"version"\s*:\s*")(?P<version>{version})("\s*,?\s*)$',
+        required=True,
+    ),
     Target(
         "src/mod/ServerInfoRestMod.cpp",
-        "declaration",
+        r'(?m)^(\s*constexpr\s+auto\s+PluginVersion\s*=\s*")(?P<version>{version})("\s*;.*)$',
         required=True,
-        pattern=r'(?m)^(\s*constexpr\s+auto\s+PluginVersion\s*=\s*"){old}("\s*;.*)$',
     ),
 )
 
@@ -70,71 +80,80 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_old_version() -> str:
-    try:
-        data = json.loads(read_text(TOOTH))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(f"cannot read {TOOTH}: {error}") from error
-    version = data.get("version")
-    if not isinstance(version, str) or not version:
-        raise ValueError('tooth.json does not contain a non-empty top-level "version"')
-    return version
+def compile_target_pattern(target: Target) -> re.Pattern[str]:
+    return re.compile(target.pattern.replace("{version}", SEMVER_TOKEN))
 
 
-def replace_target(target: Target, content: str, old: str, new: str) -> tuple[str, int]:
-    if target.mode == "tooth":
-        pattern = re.compile(rf'(?m)^(\s*"version"\s*:\s*"){re.escape(old)}("\s*,?\s*)$')
-    elif target.mode == "declaration":
-        pattern = re.compile(target.pattern.format(old=re.escape(old)))
-    else:
-        raise ValueError(f"unsupported target mode: {target.mode}")
-    return pattern.subn(lambda match: f"{match.group(1)}{new}{match.group(2)}", content)
+def inspect_target(target: Target, new: str) -> PlannedTarget | None:
+    path = ROOT / target.path
+    if not path.is_file():
+        return None
+
+    content = read_text(path)
+    pattern = compile_target_pattern(target)
+    matches = list(pattern.finditer(content))
+    if not matches:
+        return None
+
+    previous_versions = tuple(match.group("version") for match in matches)
+    changed_count = sum(version != new for version in previous_versions)
+
+    def replace(match: re.Match[str]) -> str:
+        if match.group("version") == new:
+            return match.group(0)
+        start, end = match.span("version")
+        relative_start = start - match.start()
+        relative_end = end - match.start()
+        return match.group(0)[:relative_start] + new + match.group(0)[relative_end:]
+
+    return PlannedTarget(
+        path=path,
+        content=pattern.sub(replace, content),
+        matched_count=len(matches),
+        changed_count=changed_count,
+        previous_versions=previous_versions,
+    )
 
 
-def plan_changes(old: str, new: str) -> tuple[list[tuple[Path, str, int]], list[str], list[str]]:
-    changes: list[tuple[Path, str, int]] = []
+def plan_changes(new: str) -> tuple[list[PlannedTarget], list[str], list[str]]:
+    plans: list[PlannedTarget] = []
     warnings: list[str] = []
     errors: list[str] = []
     for target in TARGETS:
-        path = ROOT / target.path
-        if not path.is_file():
-            message = f"{target.path}: file not found"
+        plan = inspect_target(target, new)
+        if plan is None:
+            message = f"{target.path}: version field not found"
             (errors if target.required else warnings).append(message)
             continue
-        content = read_text(path)
-        updated, count = replace_target(target, content, old, new)
-        if count == 0:
-            message = f"{target.path}: current version {old} not found"
-            (errors if target.required else warnings).append(message)
-            continue
-        changes.append((path, updated, count))
-    return changes, warnings, errors
+        plans.append(plan)
+    return plans, warnings, errors
 
 
 def main() -> int:
     args = parse_args()
-    try:
-        old = load_old_version()
-    except ValueError as error:
-        print(f"{Style.RED}error:{Style.RESET} {error}", file=sys.stderr)
-        return 2
-
     new = args.new_version.strip()
     if not SEMVER.fullmatch(new):
         print(f"{Style.RED}error:{Style.RESET} invalid semantic version: {new}", file=sys.stderr)
         return 2
-    if old == new:
-        print(f"{Style.YELLOW}Already at {old}; nothing to change.{Style.RESET}")
-        return 0
 
-    changes, warnings, errors = plan_changes(old, new)
-    print(f"\n{Style.BOLD}Version {old} -> {new}{Style.RESET}")
+    plans, warnings, errors = plan_changes(new)
+    print(f"\n{Style.BOLD}Synchronize version -> {new}{Style.RESET}")
     if args.dry_run:
         print(f"{Style.CYAN}Dry run: no files will be written.{Style.RESET}")
     print()
-    for path, _, count in changes:
-        print(f"  {Style.GREEN}{'would update' if args.dry_run else 'update'}{Style.RESET} "
-              f"{path.relative_to(ROOT)} ({count} occurrence{'s' if count != 1 else ''})")
+
+    changed_plans = [plan for plan in plans if plan.changed_count]
+    for plan in plans:
+        relative_path = plan.path.relative_to(ROOT)
+        if plan.changed_count:
+            previous = ", ".join(sorted({v for v in plan.previous_versions if v != new}))
+            action = "would update" if args.dry_run else "update"
+            print(
+                f"  {Style.GREEN}{action}{Style.RESET} {relative_path} "
+                f"({plan.changed_count}/{plan.matched_count} occurrences: {previous} -> {new})"
+            )
+        else:
+            print(f"  {Style.DIM}ok{Style.RESET} {relative_path} ({plan.matched_count} occurrences)")
     for warning in warnings:
         print(f"  {Style.YELLOW}warning:{Style.RESET} {warning}")
     for error in errors:
@@ -143,12 +162,16 @@ def main() -> int:
     if errors:
         print(f"\n{Style.RED}No files were written because required targets failed validation.{Style.RESET}")
         return 2
-    if not args.dry_run:
-        for path, content, _ in changes:
-            write_text(path, content)
-        print(f"\n{Style.GREEN}{Style.BOLD}Updated {len(changes)} files.{Style.RESET}")
-    else:
-        print(f"\n{Style.DIM}Validated {len(changes)} files; no files were written.{Style.RESET}")
+    if not changed_plans:
+        print(f"\n{Style.YELLOW}Already synchronized at {new}; nothing to change.{Style.RESET}")
+        return 0
+    if args.dry_run:
+        print(f"\n{Style.DIM}Validated {len(plans)} files; no files were written.{Style.RESET}")
+        return 0
+
+    for plan in changed_plans:
+        write_text(plan.path, plan.content)
+    print(f"\n{Style.GREEN}{Style.BOLD}Updated {len(changed_plans)} files.{Style.RESET}")
     return 0
 
 
