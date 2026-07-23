@@ -15,7 +15,6 @@
 #include "mc/server/commands/MinecraftCommands.h"
 #include "mc/server/commands/ServerCommandOrigin.h"
 #include "mc/world/Minecraft.h"
-#include "mc/world/level/dimension/VanillaDimensions.h"
 
 #include <algorithm>
 #include <chrono>
@@ -39,7 +38,7 @@ CommandExecutionResult executeCommandNative(const std::string& commandText) {
         "serverinfo-rest",
         serverLevel,
         ::CommandPermissionLevel::Owner,
-        ::VanillaDimensions::Overworld()
+        ::DimensionType{0}
     );
 
     std::string compileError;

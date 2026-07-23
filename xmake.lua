@@ -2,7 +2,7 @@ add_rules("mode.debug", "mode.release")
 
 add_repositories("levimc-repo https://github.com/LiteLDev/xmake-repo.git")
 
-local levilamina_version = "26.10.*"
+local levilamina_version = "26.10.14"
 
 if is_config("target_type", "server") then
     add_requires("levilamina " .. levilamina_version, {configs = {target_type = "server"}})
